@@ -17,7 +17,10 @@
       <h1>Dashboard</h1>
       <p>An overview of your spending, updated in real time.</p>
     </div>
-    <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+    <div style="display:flex;gap:0.5rem;">
+      <a class="btn btn-secondary" href="{{ url_for('expenses.export_csv') }}" download>Export Data</a>
+      <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+    </div>
   </div>
 
   <div class="summary-grid">

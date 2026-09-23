@@ -9,7 +9,7 @@ from .models import Expense
 def expenses_to_csv(expenses: list[Expense]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(["Date", "Description", "Category", "Amount"])
+    writer.writerow(["Date", "Category", "Amount", "Description"])
     for e in expenses:
-        writer.writerow([e.date, e.description, e.category, f"{e.amount:.2f}"])
+        writer.writerow([e.date, e.category, f"{e.amount:.2f}", e.description])
     return buffer.getvalue()

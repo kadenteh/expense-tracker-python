@@ -84,5 +84,22 @@ def test_csv_export(client):
     resp = client.get("/expenses/export.csv")
     assert resp.status_code == 200
     assert resp.mimetype == "text/csv"
-    assert b"Date,Description,Category,Amount" in resp.data
+    assert b"Date,Category,Amount,Description" in resp.data
     assert b"Coffee" in resp.data
+
+
+def test_dashboard_export_button_downloads_all_expenses(client):
+    for desc, cat in [("Coffee", "Food"), ("Bus pass", "Transportation")]:
+        client.post(
+            "/expenses/add",
+            data={"description": desc, "amount": "5", "category": cat, "date": "2026-09-20"},
+        )
+    page = client.get("/")
+    assert b"Export Data" in page.data
+    assert b'href="/expenses/export.csv" download' in page.data
+
+    resp = client.get("/expenses/export.csv")
+    assert resp.headers["Content-Disposition"] == "attachment; filename=expenses.csv"
+    lines = resp.get_data(as_text=True).strip().splitlines()
+    assert lines[0] == "Date,Category,Amount,Description"
+    assert len(lines) == 3
