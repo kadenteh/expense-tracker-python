@@ -1,0 +1,162 @@
+<dialog
+  class="export-dialog"
+  id="export-dialog"
+  aria-labelledby="export-title"
+  aria-describedby="export-subtitle"
+  data-preview-url="{{ url_for('export.preview') }}"
+  data-download-url="{{ url_for('export.download') }}"
+>
+  <form class="export-dialog__frame" id="export-form" novalidate>
+    <header class="export-dialog__header">
+      <div>
+        <h2 id="export-title">Export expenses</h2>
+        <p id="export-subtitle">Pick a format and narrow the data down. The preview updates as you go.</p>
+      </div>
+      <button type="button" class="icon-btn" data-export-close aria-label="Close export dialog">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="export-dialog__body">
+      {# One wrapper around every control so they can all be made inert while exporting. #}
+      <fieldset class="export-options" id="export-controls">
+        <legend class="visually-hidden">Export options</legend>
+
+        <div class="export-section" role="radiogroup" aria-labelledby="export-format-label">
+          <h3 class="export-section__title" id="export-format-label">Format</h3>
+          <div class="format-options">
+            {% for f in EXPORT_FORMATS %}
+            <label class="format-option">
+              <input type="radio" name="format" value="{{ f.key }}" data-extension="{{ f.extension }}" {{ 'checked' if loop.first }}>
+              <span class="format-option__badge">{{ f.label }}</span>
+              <span class="format-option__title">{{ f.title }}</span>
+              <span class="format-option__desc">{{ f.description }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="export-section" role="group" aria-labelledby="export-range-label">
+          <h3 class="export-section__title" id="export-range-label">Date range</h3>
+          <div class="chip-row" role="group" aria-label="Quick date ranges">
+            <button type="button" class="chip" data-preset="all" aria-pressed="true">All time</button>
+            <button type="button" class="chip" data-preset="this-month" aria-pressed="false">This month</button>
+            <button type="button" class="chip" data-preset="last-month" aria-pressed="false">Last month</button>
+            <button type="button" class="chip" data-preset="last-90" aria-pressed="false">Last 90 days</button>
+            <button type="button" class="chip" data-preset="this-year" aria-pressed="false">This year</button>
+          </div>
+          <div class="date-range">
+            <label class="form-field">
+              <span>From</span>
+              <input type="date" class="form-input" name="from" id="export-from">
+            </label>
+            <label class="form-field">
+              <span>To</span>
+              <input type="date" class="form-input" name="to" id="export-to">
+            </label>
+          </div>
+          <p class="form-error" data-error-for="from"></p>
+          <p class="form-error" data-error-for="to"></p>
+        </div>
+
+        <div class="export-section" role="group" aria-labelledby="export-categories-label">
+          <div class="export-section__head">
+            <h3 class="export-section__title" id="export-categories-label">Categories</h3>
+            <span class="export-section__links">
+              <button type="button" class="link-btn" data-select-categories="all">All</button>
+              <span aria-hidden="true">&middot;</span>
+              <button type="button" class="link-btn" data-select-categories="none">None</button>
+            </span>
+          </div>
+          <div class="chip-row">
+            {% for c in ALL_CATEGORIES %}
+            <label class="category-chip">
+              <input type="checkbox" name="categories" value="{{ c }}" checked>
+              <span class="dot" style="background:{{ category_color(c) }}"></span>
+              {{ c }}
+              <span class="category-chip__count" data-count-for="{{ c }}"></span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="form-error" data-error-for="categories"></p>
+        </div>
+
+        <div class="export-section export-section--grid">
+          <label class="form-field">
+            <span>Sort by</span>
+            <select class="form-select" name="sort">
+              {% for value, label in EXPORT_SORT_LABELS.items() %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="form-field">
+            <span>File name</span>
+            <span class="filename-field">
+              <input
+                type="text" class="form-input" name="filename" id="export-filename"
+                maxlength="80" autocomplete="off" spellcheck="false"
+                aria-describedby="export-filename-hint"
+              >
+              <span class="filename-field__ext" id="export-extension">.csv</span>
+            </span>
+          </label>
+          <p class="form-hint" id="export-filename-hint">Saved as <strong id="export-resolved-name">&hellip;</strong></p>
+        </div>
+      </fieldset>
+
+      <section class="export-preview" id="export-preview" aria-labelledby="export-preview-title" aria-busy="true">
+        <div class="export-progress" aria-hidden="true"></div>
+
+        <div class="export-summary" aria-live="polite" aria-atomic="true">
+          <div class="export-stat">
+            <span class="export-stat__label">Records</span>
+            <span class="export-stat__value" data-summary="count">&mdash;</span>
+          </div>
+          <div class="export-stat">
+            <span class="export-stat__label">Total</span>
+            <span class="export-stat__value" data-summary="total">&mdash;</span>
+          </div>
+          <div class="export-stat export-stat--wide">
+            <span class="export-stat__label">Period</span>
+            <span class="export-stat__value export-stat__value--small" data-summary="period">&mdash;</span>
+          </div>
+        </div>
+
+        <div class="export-preview__head">
+          <h3 class="export-section__title" id="export-preview-title">Preview</h3>
+          <span class="export-preview__note" data-summary="note"></span>
+        </div>
+
+        <div class="export-table-wrap">
+          <table class="export-table">
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Category</th>
+                <th scope="col">Description</th>
+                <th scope="col" class="right">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="export-preview-rows"></tbody>
+          </table>
+          <div class="export-empty" id="export-empty" hidden>
+            <p>No expenses match these filters</p>
+            <p>Widen the date range or select more categories.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="export-dialog__footer">
+      <p class="export-dialog__status" id="export-status" role="status"></p>
+      <div class="export-dialog__actions">
+        <button type="button" class="btn btn-secondary" data-export-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="export-submit" disabled>
+          <span class="spinner" aria-hidden="true"></span>
+          <span data-submit-label>Export</span>
+        </button>
+      </div>
+    </footer>
+  </form>
+</dialog>
