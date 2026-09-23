@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .csvutil import csv_bytes
 from .pdf_report import render_pdf
 from .report import ExportReport
 
 CSV_COLUMNS = ["Date", "Category", "Amount", "Description"]
-
-# Spreadsheet apps evaluate cells starting with these as formulas.
-_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+EXPORT_FORMAT_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -26,26 +23,31 @@ class ExportFormat:
     title: str
     description: str
     render: Callable[[ExportReport], bytes]
-
-
-def _neutralize_formula(value: str) -> str:
-    """Stop a description like '=HYPERLINK(...)' being run as a formula when opened in Excel."""
-    return "'" + value if value.startswith(_FORMULA_PREFIXES) else value
+    listed: bool = True  # offered in the quick-export dialog
+    tabular: bool = False  # a table a spreadsheet can ingest row by row
 
 
 def render_csv(report: ExportReport) -> bytes:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(CSV_COLUMNS)
-    for e in report.expenses:
-        writer.writerow([e.date, e.category, f"{e.amount:.2f}", _neutralize_formula(e.description)])
-    # The BOM makes Excel detect UTF-8 instead of mangling non-ASCII descriptions.
-    return buffer.getvalue().encode("utf-8-sig")
+    rows = [CSV_COLUMNS]
+    rows += [[e.date, e.category, f"{e.amount:.2f}", e.description] for e in report.expenses]
+    return csv_bytes(rows)
+
+
+def render_summary_csv(report: ExportReport) -> bytes:
+    """The report's display table with its headline figures on top."""
+    table = report.display_table
+    rows: list[list] = [[report.title]]
+    rows += [list(h) for h in table.highlights]
+    rows += [[], table.headers, *table.rows]
+    return csv_bytes(rows)
 
 
 def render_json(report: ExportReport) -> bytes:
     options = report.options
     payload = {
+        "format": "expense-tracker-export",
+        "version": EXPORT_FORMAT_VERSION,
+        "title": report.title,
         "export": {
             "generated_at": report.generated_at.isoformat(timespec="seconds"),
             "filters": {
@@ -78,7 +80,7 @@ def render_json(report: ExportReport) -> bytes:
     return (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-EXPORT_FORMATS: dict[str, ExportFormat] = {
+ALL_FORMATS: dict[str, ExportFormat] = {
     f.key: f
     for f in (
         ExportFormat(
@@ -89,6 +91,7 @@ EXPORT_FORMATS: dict[str, ExportFormat] = {
             title="Spreadsheet",
             description="Opens in Excel, Numbers, or Google Sheets.",
             render=render_csv,
+            tabular=True,
         ),
         ExportFormat(
             key="json",
@@ -108,5 +111,19 @@ EXPORT_FORMATS: dict[str, ExportFormat] = {
             description="Summary, category breakdown, and itemized table.",
             render=render_pdf,
         ),
+        ExportFormat(
+            key="summary",
+            label="Summary CSV",
+            extension="csv",
+            mimetype="text/csv",
+            title="Report table",
+            description="The template's summary table and headline figures.",
+            render=render_summary_csv,
+            listed=False,
+            tabular=True,
+        ),
     )
 }
+
+# What the quick-export dialog and /export/* accept.
+EXPORT_FORMATS: dict[str, ExportFormat] = {k: f for k, f in ALL_FORMATS.items() if f.listed}

@@ -33,7 +33,7 @@ DESCRIPTION_WIDTH = COL_AMOUNT_RIGHT - 84 - COL_DESCRIPTION
 
 
 def render_pdf(report: ExportReport) -> bytes:
-    doc = PdfDocument(title="Expense Report", created=report.generated_at)
+    doc = PdfDocument(title=report.title, created=report.generated_at)
     page = doc.add_page()
     y = _draw_report_header(page, report)
 
@@ -68,7 +68,7 @@ def _generated_label(report: ExportReport) -> str:
 
 def _draw_report_header(page: PdfPage, report: ExportReport) -> float:
     page.rect(MARGIN, TOP - 4, 32, 4, color=BRAND)
-    page.text(MARGIN, TOP - 30, "Expense Report", size=22, bold=True, color=INK)
+    page.text(MARGIN, TOP - 30, fit_text(report.title, CONTENT_WIDTH, 22, bold=True), size=22, bold=True, color=INK)
     page.text(MARGIN, TOP - 47, _generated_label(report), size=9, color=MUTED)
 
     # Key figures.
@@ -120,7 +120,7 @@ def _draw_category_breakdown(page: PdfPage, y: float, report: ExportReport) -> f
 
 
 def _draw_continuation_header(page: PdfPage, report: ExportReport) -> float:
-    page.text(MARGIN, TOP - 12, "Expense Report", size=12, bold=True, color=INK)
+    page.text(MARGIN, TOP - 12, fit_text(report.title, CONTENT_WIDTH - 170, 12, bold=True), size=12, bold=True, color=INK)
     page.text_right(CONTENT_RIGHT, TOP - 12, report.period_label, size=9, color=MUTED)
     page.line(MARGIN, TOP - 22, CONTENT_RIGHT, TOP - 22, color=RULE)
     return TOP - 36

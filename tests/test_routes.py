@@ -84,5 +84,5 @@ def test_csv_export(client):
     resp = client.get("/expenses/export.csv")
     assert resp.status_code == 200
     assert resp.mimetype == "text/csv"
-    assert b"Date,Description,Category,Amount" in resp.data
+    assert b"Date,Category,Amount,Description" in resp.data
     assert b"Coffee" in resp.data

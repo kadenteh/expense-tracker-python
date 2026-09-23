@@ -1,5 +1,6 @@
 import json
 import re
+import zlib
 from datetime import date, datetime, timezone
 
 import pytest
@@ -157,7 +158,12 @@ def test_json_structure():
 
 
 def pdf_text(body: bytes) -> str:
-    return body.decode("latin-1")
+    """The PDF's structure plus its decompressed page content, as text."""
+    streams = [
+        zlib.decompress(body[m.end() : m.end() + int(m.group(1))])
+        for m in re.finditer(rb"<< /Length (\d+) /Filter /FlateDecode >>\nstream\n", body)
+    ]
+    return (body + b"\n".join(streams)).decode("latin-1")
 
 
 def assert_valid_pdf_structure(body: bytes) -> int:
@@ -169,7 +175,9 @@ def assert_valid_pdf_structure(body: bytes) -> int:
     offsets = [int(m) for m in re.findall(rb"(\d{10}) 00000 n ", body[startxref:])]
     for number, offset in enumerate(offsets, start=1):
         assert body[offset:].startswith(b"%d 0 obj" % number)
-    for match in re.finditer(rb"<< /Length (\d+) >>\nstream\n", body):
+    streams = list(re.finditer(rb"<< /Length (\d+) /Filter /FlateDecode >>\nstream\n", body))
+    assert streams, "no content streams found"
+    for match in streams:
         length = int(match.group(1))
         assert body[match.end() + length :].startswith(b"\nendstream")
     return int(re.search(rb"/Type /Pages /Kids \[[^\]]*\] /Count (\d+)", body).group(1))

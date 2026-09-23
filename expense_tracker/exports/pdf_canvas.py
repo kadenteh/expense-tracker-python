@@ -4,6 +4,7 @@ exactly what the expense report needs, so the app stays free of dependencies."""
 
 from __future__ import annotations
 
+import zlib
 from datetime import datetime
 from typing import Optional
 
@@ -140,8 +141,10 @@ class PdfDocument:
                     f" /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {ref + 1} 0 R >>"
                 ).encode("ascii")
             )
-            stream = page.content()
-            objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
+            stream = zlib.compress(page.content(), 9)
+            objects.append(
+                b"<< /Length %d /Filter /FlateDecode >>\nstream\n" % len(stream) + stream + b"\nendstream"
+            )
 
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
