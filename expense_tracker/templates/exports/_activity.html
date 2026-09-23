@@ -1,0 +1,76 @@
+{% from "exports/_icons.html" import icon, destination_mark %}
+{% set trigger_labels = {"schedule": "Scheduled", "auto-sync": "Live sync", "rerun": "Re-run"} %}
+{% if not jobs %}
+  <div class="xc-empty">
+    <span class="xc-empty__icon">{{ icon('bolt', 22) }}</span>
+    <p>No exports yet</p>
+    <p>Pick a template above. Your first export takes a few seconds.</p>
+  </div>
+{% else %}
+  <ol class="activity">
+    {% for j in jobs %}
+    {% set dest = j.destination %}
+    <li class="activity-item activity-item--{{ j.status }}" data-job-id="{{ j.id }}">
+      <span class="activity-item__mark">
+        {% if dest %}{{ destination_mark(dest, integrations_catalog) }}{% endif %}
+        <span class="activity-item__badge" aria-hidden="true">
+          {% if j.status == 'done' %}{{ icon('check', 10) }}{% elif j.status == 'failed' %}{{ icon('x', 10) }}{% else %}<span class="mini-spinner"></span>{% endif %}
+        </span>
+      </span>
+
+      <div class="activity-item__main">
+        <div class="activity-item__top">
+          <span class="activity-item__title">{{ j.title }}</span>
+          <time class="activity-item__time" datetime="{{ j.created_at.isoformat() }}" title="{{ j.created_at | localtime }}">{{ j.created_at | timeago }}</time>
+        </div>
+        <div class="activity-item__meta">
+          <span>{{ dest.name if dest else j.destination_key }}</span>
+          {% if dest and dest.simulated %}<span class="sim-badge" title="No data left this computer">Simulated</span>{% endif %}
+          {% if j.trigger in trigger_labels %}<span class="trigger-chip">{{ trigger_labels[j.trigger] }}</span>{% endif %}
+        </div>
+
+        {% if j.is_active %}
+          <div class="progress" role="progressbar" aria-label="{{ j.title }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ j.progress }}">
+            <span style="width: {{ j.progress }}%"></span>
+          </div>
+          <p class="activity-item__stage">{{ j.stage }}&hellip;</p>
+        {% elif j.status == 'failed' %}
+          <p class="activity-item__error">{{ icon('alert', 13) }} {{ j.error }}</p>
+        {% else %}
+          <p class="activity-item__detail">
+            {%- set r = j.result -%}
+            {%- if j.destination_key == 'email' -%}
+              Sent to {{ r.recipients[0] }}{% if r.recipients | length > 1 %} +{{ r.recipients | length - 1 }}{% endif %}
+            {%- elif j.destination_key == 'share' -%}
+              Share link created
+            {%- elif j.destination_key == 'slack' -%}
+              Posted to {{ r.channel }}
+            {%- elif r.location -%}
+              {{ r.location }}
+            {%- else -%}
+              Ready to download
+            {%- endif %}
+            <span class="fact"><span class="dot-sep">&middot;</span>{{ '{:,}'.format(j.record_count or 0) }} record{{ 's' if j.record_count != 1 }}</span>
+            <span class="fact"><span class="dot-sep">&middot;</span>{{ format_size(j.size) }}</span>
+            {% if j.checksum %}<span class="fact"><span class="dot-sep">&middot;</span><code class="checksum" title="SHA-256: {{ j.checksum }}">{{ j.checksum[:8] }}</code></span>{% endif %}
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="activity-item__actions">
+        {% if j.status == 'done' %}
+          <a class="icon-btn" href="{{ url_for('exports.download', job_id=j.id) }}" title="Download {{ j.filename }}" aria-label="Download {{ j.filename }}">{{ icon('download', 16) }}</a>
+          {% if dest and dest.simulated %}
+          <a class="icon-btn" href="{{ url_for('exports.preview', job_id=j.id) }}" title="See what {{ dest.name }} received" aria-label="Preview {{ dest.name }} delivery">{{ icon('eye', 16) }}</a>
+          {% endif %}
+          <button type="button" class="icon-btn" data-action="share-job" data-job="{{ j.id }}" title="Create share link" aria-label="Share {{ j.title }}">{{ icon('share', 16) }}</button>
+        {% endif %}
+        {% if not j.is_active %}
+          <button type="button" class="icon-btn" data-action="rerun" data-job="{{ j.id }}" title="Run again" aria-label="Run {{ j.title }} again">{{ icon('refresh', 16) }}</button>
+          <button type="button" class="icon-btn danger" data-action="delete-job" data-job="{{ j.id }}" title="Delete from history" aria-label="Delete {{ j.title }}">{{ icon('trash', 16) }}</button>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+{% endif %}

@@ -1,0 +1,33 @@
+{% from "exports/_icons.html" import icon %}
+{% if not schedules %}
+  <div class="xc-empty xc-empty--compact">
+    <p>Nothing scheduled</p>
+    <p>Set up a weekly backup to Dropbox, or a monthly summary by email.</p>
+  </div>
+{% else %}
+  <ul class="schedule-list">
+    {% for s in schedules %}
+    <li class="schedule {{ 'is-paused' if not s.enabled }}">
+      <span class="schedule__icon">{{ icon(s.template.icon if s.template else 'clock', 16) }}</span>
+      <div class="schedule__main">
+        <div class="schedule__name">{{ s.template.name if s.template else s.template_key }} <span aria-hidden="true">&rarr;</span> {{ s.destination.name if s.destination else s.destination_key }}</div>
+        <div class="schedule__meta">
+          {{ frequencies[s.frequency] }}
+          <span class="dot-sep">&middot;</span>
+          {% if s.enabled %}
+            <span title="{{ s.next_run_at | localtime }}">Next {{ s.next_run_at | timeago }}</span>
+          {% else %}
+            Paused
+          {% endif %}
+          {% if s.last_run_at %}<span class="dot-sep">&middot;</span><span title="{{ s.last_run_at | localtime }}">Last {{ s.last_run_at | timeago }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="schedule__actions">
+        <button type="button" class="icon-btn" data-action="run-schedule" data-id="{{ s.id }}" title="Run now" aria-label="Run now">{{ icon('play', 14) }}</button>
+        <button type="button" class="icon-btn" data-action="toggle-schedule" data-id="{{ s.id }}" title="{{ 'Pause' if s.enabled else 'Resume' }}" aria-label="{{ 'Pause' if s.enabled else 'Resume' }}">{{ icon('pause' if s.enabled else 'repeat', 14) }}</button>
+        <button type="button" class="icon-btn danger" data-action="delete-schedule" data-id="{{ s.id }}" title="Delete schedule" aria-label="Delete schedule">{{ icon('trash', 14) }}</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+{% endif %}

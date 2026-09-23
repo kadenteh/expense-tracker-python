@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "exports/_icons.html" import icon, service_tile %}
+{% block title %}{{ job.title }} · Delivery preview{% endblock %}
+
+{% block content %}
+{% set dest = job.destination %}
+{% set p = job.preview %}
+{% set r = job.result %}
+<a class="back-link" href="{{ url_for('exports.center') }}">&larr; Export Center</a>
+
+<div class="sim-banner">
+  {{ icon('shield', 18) }}
+  <div><strong>Simulated delivery.</strong> This is what {{ 'the recipients' if job.destination_key == 'email' else dest.name }} would have received. Nothing was sent.</div>
+</div>
+
+{% if job.destination_key == 'email' %}
+<article class="mail-mock">
+  <header class="mail-mock__header">
+    <h1>{{ r.subject }}</h1>
+    <dl>
+      <dt>From</dt><dd>Expense Tracker &lt;exports@expense-tracker.example&gt;</dd>
+      <dt>To</dt><dd>{{ r.recipients | join(', ') }}</dd>
+      <dt>Date</dt><dd>{{ job.finished_at | localtime }}</dd>
+    </dl>
+  </header>
+  <div class="mail-mock__body">
+    {% if r.message %}<p class="mail-mock__message">{{ r.message }}</p>{% endif %}
+    <p>Here's your <strong>{{ job.title }}</strong>.</p>
+    <div class="highlight-grid">
+      {% for label, value in p.highlights %}
+      <div><span>{{ label }}</span><strong>{{ value }}</strong></div>
+      {% endfor %}
+    </div>
+    <a class="attachment" href="{{ url_for('exports.download', job_id=job.id) }}">
+      <span class="attachment__icon">{{ icon('receipt', 18) }}</span>
+      <span><strong>{{ job.filename }}</strong><span>{{ format_size(job.size) }}</span></span>
+    </a>
+    <p class="mail-mock__footer">Sent by Expense Tracker &middot; SHA-256 <code>{{ job.checksum[:16] }}&hellip;</code></p>
+  </div>
+</article>
+
+{% elif job.destination_key == 'google-sheets' %}
+<div class="sheet-mock">
+  <div class="sheet-mock__bar">
+    {{ service_tile(integrations['google-sheets']) }}
+    <div><strong>{{ job.title }}</strong><span>{{ r.location }}</span></div>
+  </div>
+  <div class="sheet-mock__grid-wrap">
+    <table class="sheet-mock__grid">
+      <thead>
+        <tr><th class="sheet-mock__corner"></th>{% for h in p.headers %}<th>{{ "ABCDEFGHIJKL"[loop.index0] }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        <tr class="is-header"><th>1</th>{% for h in p.headers %}<td>{{ h }}</td>{% endfor %}</tr>
+        {% for row in p.rows %}
+        <tr><th>{{ loop.index + 1 }}</th>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="sheet-mock__tabs"><span class="is-active">{{ job.template.name if job.template else 'Sheet1' }}</span><span>+</span></div>
+</div>
+
+{% elif job.destination_key == 'slack' %}
+<div class="chat-mock">
+  <div class="chat-mock__channel"># finance</div>
+  <div class="chat-mock__message">
+    <span class="chat-mock__avatar" aria-hidden="true">$</span>
+    <div>
+      <div class="chat-mock__author"><strong>Expense Tracker</strong> <span class="chat-mock__app">APP</span> <span class="xc-muted">{{ job.finished_at | localtime }}</span></div>
+      <p class="chat-mock__title">{{ job.title }}</p>
+      <ul class="chat-mock__facts">
+        {% for label, value in p.highlights %}<li><span>{{ label }}</span> {{ value }}</li>{% endfor %}
+      </ul>
+      <a class="attachment attachment--compact" href="{{ url_for('exports.download', job_id=job.id) }}">
+        <span class="attachment__icon">{{ icon('receipt', 16) }}</span>
+        <span><strong>{{ job.filename }}</strong><span>{{ format_size(job.size) }}</span></span>
+      </a>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="files-mock">
+  <div class="files-mock__bar">
+    {{ service_tile(integrations[dest.integration]) }}
+    <nav class="files-mock__path" aria-label="Folder">
+      {% for part in r.location.replace(' › ', '/').strip('/').split('/')[:-1] %}
+      <span>{{ part }}</span><span aria-hidden="true">/</span>
+      {% endfor %}
+    </nav>
+  </div>
+  <table class="files-mock__table">
+    <thead><tr><th>Name</th><th>Size</th><th>Modified</th></tr></thead>
+    <tbody>
+      <tr class="is-new">
+        <td><span class="files-mock__file">{{ icon('receipt', 16) }} {{ job.filename }}</span> <span class="trigger-chip">Just added</span></td>
+        <td>{{ format_size(job.size) }}</td>
+        <td>{{ job.finished_at | localtime }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="xc-footnote">Checksum verified after upload &middot; SHA-256 <code>{{ job.checksum }}</code></p>
+</div>
+{% endif %}
+{% endblock %}

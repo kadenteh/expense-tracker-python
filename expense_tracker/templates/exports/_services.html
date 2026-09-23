@@ -1,0 +1,41 @@
+{% from "exports/_icons.html" import icon, service_tile %}
+<ul class="service-list">
+  {% for s in services %}
+  {% set i = s.integration %}
+  <li class="service {{ 'is-connected' if s.row }}">
+    <div class="service__row">
+      {{ service_tile(i) }}
+      <div class="service__main">
+        <div class="service__name">{{ i.name }}</div>
+        {% if s.row %}
+          <div class="sync-status sync-status--{{ s.sync.state }}">
+            <span class="sync-dot"></span>{{ s.sync.label }}
+            {%- if s.last_sync and s.sync.state in ('synced', 'stale') %} <span class="xc-muted" title="{{ s.last_sync | localtime }}">&middot; {{ s.last_sync | timeago }}</span>{% endif %}
+          </div>
+        {% else %}
+          <div class="service__desc">{{ i.category }}</div>
+        {% endif %}
+      </div>
+      {% if not s.row %}
+        <button type="button" class="btn btn-secondary btn-sm" data-action="connect" data-key="{{ i.key }}">Connect</button>
+      {% endif %}
+    </div>
+
+    {% if s.row %}
+    <div class="service__controls">
+      <span class="service__account" title="Simulated account">{{ s.row.account }}</span>
+      {% if i.live_sync %}
+        <label class="switch" title="Mirror your expenses to {{ i.name }} whenever they change">
+          <input type="checkbox" data-action="auto-sync" data-key="{{ i.key }}" {{ 'checked' if s.row.auto_sync }}>
+          <span class="switch__track" aria-hidden="true"></span>
+          <span>Live sync</span>
+        </label>
+        <button type="button" class="link-btn" data-action="sync-now" data-key="{{ i.key }}" {{ 'disabled' if s.sync.state == 'syncing' }}>Sync now</button>
+      {% endif %}
+      <button type="button" class="link-btn link-btn--muted" data-action="disconnect" data-key="{{ i.key }}">Disconnect</button>
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+<p class="xc-footnote">{{ icon('shield', 13) }} Service connections are simulated: nothing is sent to these providers.</p>

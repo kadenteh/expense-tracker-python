@@ -17,7 +17,13 @@
       <h1>Dashboard</h1>
       <p>An overview of your spending, updated in real time.</p>
     </div>
-    <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+    <div class="page-header__actions">
+      <a class="btn btn-secondary" href="{{ url_for('exports.center') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/></svg>
+        Export &amp; share
+      </a>
+      <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+    </div>
   </div>
 
   <div class="summary-grid">

@@ -1,0 +1,112 @@
+{% from "exports/_icons.html" import icon, destination_mark %}
+<dialog class="drawer" id="new-export" aria-labelledby="new-export-title">
+  <form class="drawer__frame" id="new-export-form" novalidate>
+    <header class="drawer__header">
+      <div>
+        <h2 id="new-export-title">New export</h2>
+        <p>Choose what to export and where it should go.</p>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">{{ icon('x', 18) }}</button>
+    </header>
+
+    <div class="drawer__body">
+      <section class="step">
+        <h3 class="step__title"><span class="step__num">1</span>Template</h3>
+        <div class="template-options">
+          {% for t in templates.values() %}
+          <label class="template-option">
+            <input type="radio" name="template" value="{{ t.key }}" {{ 'checked' if loop.first }}>
+            <span class="template-option__icon">{{ icon(t.icon, 16) }}</span>
+            <span class="template-option__text">
+              <strong>{{ t.name }}</strong>
+              <span>{{ t.tagline }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="step">
+        <h3 class="step__title"><span class="step__num">2</span>When</h3>
+        <div class="step__grid">
+          <label class="form-field">
+            <span>Repeat</span>
+            <select class="form-select" name="repeat">
+              <option value="once">Just once, now</option>
+              {% for value, label in frequencies.items() %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="form-field" data-show-when="once">
+            <span>Period</span>
+            <select class="form-select" name="period"></select>
+          </label>
+          <p class="step__hint" data-show-when="repeat" id="schedule-hint"></p>
+        </div>
+        <p class="form-error" data-error-for="period"></p>
+        <p class="form-error" data-error-for="frequency"></p>
+      </section>
+
+      <section class="step">
+        <h3 class="step__title"><span class="step__num">3</span>Destination</h3>
+        <div class="destination-grid">
+          {% for d in destinations.values() %}
+          <label class="destination" data-destination="{{ d.key }}" {% if d.integration %}data-integration="{{ d.integration }}"{% endif %}>
+            <input type="radio" name="destination" value="{{ d.key }}" {{ 'checked' if loop.first }}>
+            {{ destination_mark(d, integrations) }}
+            <span class="destination__name">{{ d.name }}</span>
+            <span class="destination__blurb">{{ d.blurb }}</span>
+            {% if d.integration %}<span class="destination__connect">Connect</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+        <p class="form-error" data-error-for="destination"></p>
+
+        <div class="dest-options" data-options-for="email" hidden>
+          <label class="form-field">
+            <span>To</span>
+            <input class="form-input" name="recipients" type="text" placeholder="accountant@example.com, partner@example.com" autocomplete="off">
+          </label>
+          <p class="form-error" data-error-for="recipients"></p>
+          <label class="form-field">
+            <span>Subject <em class="xc-muted">(optional)</em></span>
+            <input class="form-input" name="subject" type="text" maxlength="150" placeholder="Defaults to the report title">
+          </label>
+          <label class="form-field">
+            <span>Message <em class="xc-muted">(optional)</em></span>
+            <textarea class="form-input" name="message" rows="3" maxlength="2000" placeholder="Hi! Here's the report we talked about."></textarea>
+          </label>
+        </div>
+
+        <div class="dest-options" data-options-for="share" hidden>
+          <div class="step__grid">
+            <label class="form-field">
+              <span>Link expires</span>
+              <select class="form-select" name="expiry">
+                {% for value, label in expiry_options.items() %}
+                <option value="{{ value }}" {{ 'selected' if value == '7' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" name="redact">
+            <span><strong>Hide descriptions</strong><br><span class="xc-muted">Recipients see dates, categories and amounts only.</span></span>
+          </label>
+        </div>
+
+        <p class="sim-note" data-sim-note hidden>{{ icon('shield', 14) }} <span></span></p>
+      </section>
+    </div>
+
+    <footer class="drawer__footer">
+      <p class="drawer__summary" id="new-export-summary"></p>
+      <p class="form-error" data-error-for="general"></p>
+      <div class="drawer__actions">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="new-export-submit"><span class="spinner" aria-hidden="true"></span><span data-label>Start export</span></button>
+      </div>
+    </footer>
+  </form>
+</dialog>

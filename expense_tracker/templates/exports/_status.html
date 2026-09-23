@@ -1,0 +1,11 @@
+{% set running = active_jobs | length %}
+{% set stale = stale_services | length %}
+{% if running %}
+  <span class="sync-pill sync-pill--syncing"><span class="sync-dot"></span>{{ running }} export{{ 's' if running != 1 }} running</span>
+{% elif stale %}
+  <span class="sync-pill sync-pill--stale"><span class="sync-dot"></span>{{ stale }} service{{ 's' if stale != 1 }} out of date</span>
+{% elif connected_keys %}
+  <span class="sync-pill sync-pill--synced"><span class="sync-dot"></span>Everything in sync</span>
+{% else %}
+  <span class="sync-pill"><span class="sync-dot"></span>Working locally</span>
+{% endif %}

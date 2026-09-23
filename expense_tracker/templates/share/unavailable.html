@@ -1,0 +1,21 @@
+{% from "exports/_icons.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Link unavailable · Expense Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="share-page">
+  <main class="share-page__main share-page__gone">
+    <span class="xc-empty__icon">{{ icon('lock', 22) }}</span>
+    <h1>This link is no longer available</h1>
+    <p class="xc-muted">
+      {% if link.status == 'revoked' %}The sender turned off this link.{% else %}This link expired {{ link.expires_at | timeago }}.{% endif %}
+      Ask them to share the report again.
+    </p>
+  </main>
+</body>
+</html>

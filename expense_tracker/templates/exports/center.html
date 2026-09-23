@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "exports/_icons.html" import icon %}
+{% block title %}Export Center · Expense Tracker{% endblock %}
+
+{% block content %}
+<section class="xc-hero">
+  <div class="xc-hero__text">
+    <p class="xc-eyebrow">{{ icon('cloud', 14) }} Export Center</p>
+    <h1>Send your expenses anywhere</h1>
+    <p>Download, share, email, or sync to the tools you already use. Exports run in the background, so you can keep working while they finish.</p>
+  </div>
+  <div class="xc-hero__actions">
+    <div id="panel-status" aria-live="polite">{% include "exports/_status.html" %}</div>
+    <div class="xc-hero__buttons">
+      <button type="button" class="btn btn-secondary" data-action="new-export" data-repeat="weekly">{{ icon('repeat', 16) }} Schedule</button>
+      <button type="button" class="btn btn-primary" data-action="new-export">{{ icon('plus', 16) }} New export</button>
+    </div>
+  </div>
+</section>
+
+<section class="xc-section" aria-labelledby="templates-title">
+  <h2 class="xc-section__title" id="templates-title">Start from a template</h2>
+  <div class="template-grid">
+    {% for t in templates.values() %}
+    <button type="button" class="template-card" data-action="new-export" data-template="{{ t.key }}">
+      <span class="template-card__icon">{{ icon(t.icon, 20) }}</span>
+      <span class="template-card__name">{{ t.name }}</span>
+      <span class="template-card__tagline">{{ t.tagline }}</span>
+      <span class="template-card__desc">{{ t.description }}</span>
+      <span class="template-card__cta">Use template <span aria-hidden="true">&rarr;</span></span>
+    </button>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="xc-layout">
+  <section class="card xc-panel" aria-labelledby="activity-title">
+    <div class="xc-panel__head">
+      <h2 id="activity-title">Activity</h2>
+      <span class="xc-muted">Every export is fingerprinted with SHA-256</span>
+    </div>
+    <div id="panel-activity">{% include "exports/_activity.html" %}</div>
+  </section>
+
+  <aside class="xc-side">
+    <section class="card xc-panel" aria-labelledby="services-title">
+      <div class="xc-panel__head">
+        <h2 id="services-title">Connected services</h2>
+      </div>
+      <div id="panel-services">{% include "exports/_services.html" %}</div>
+    </section>
+
+    <section class="card xc-panel" aria-labelledby="schedules-title">
+      <div class="xc-panel__head">
+        <h2 id="schedules-title">Scheduled exports</h2>
+        <button type="button" class="link-btn" data-action="new-export" data-repeat="weekly">+ New</button>
+      </div>
+      <div id="panel-schedules">{% include "exports/_schedules.html" %}</div>
+    </section>
+
+    <section class="card xc-panel" aria-labelledby="shares-title">
+      <div class="xc-panel__head">
+        <h2 id="shares-title">Shared links</h2>
+      </div>
+      <div id="panel-shares">{% include "exports/_shares.html" %}</div>
+    </section>
+  </aside>
+</div>
+
+{% include "exports/_new_export.html" %}
+{% include "exports/_dialogs.html" %}
+
+<script type="application/json" id="xc-data">{{ client_data | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/export-center.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% from "exports/_icons.html" import icon %}
+
+{# Simulated OAuth consent screen #}
+<dialog class="modal consent" id="connect-dialog" aria-labelledby="connect-title">
+  <div class="consent__handshake" aria-hidden="true">
+    <span class="service-tile service-tile--lg service-tile--brand">$</span>
+    <span class="consent__wire"><span></span></span>
+    <span class="service-tile service-tile--lg" data-connect-tile></span>
+  </div>
+  <h2 id="connect-title">Connect <span data-connect-name></span></h2>
+  <p class="consent__lead"><strong>Expense Tracker</strong> would like to:</p>
+  <ul class="consent__scopes" data-connect-scopes></ul>
+  <div class="consent__account">
+    <span class="consent__avatar" aria-hidden="true">Y</span>
+    <span>Continue as <strong data-connect-account></strong></span>
+  </div>
+  <p class="sim-note">{{ icon('shield', 14) }} <span>Simulated sign-in. Nothing contacts <span data-connect-name></span>, no password is requested, and no data leaves your computer.</span></p>
+  <div class="modal__actions">
+    <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+    <button type="button" class="btn btn-primary" data-connect-allow><span class="spinner" aria-hidden="true"></span><span data-label>Allow access</span></button>
+  </div>
+</dialog>
+
+{# Share link + QR code #}
+<dialog class="modal share-dialog" id="share-dialog" aria-labelledby="share-title">
+  <header class="modal__header">
+    <h2 id="share-title">Share export</h2>
+    <button type="button" class="icon-btn" data-close aria-label="Close">{{ icon('x', 18) }}</button>
+  </header>
+
+  <form class="share-setup" data-share-setup>
+    <p class="xc-muted" data-share-subtitle></p>
+    <label class="form-field">
+      <span>Link expires</span>
+      <select class="form-select" name="expiry">
+        {% for value, label in expiry_options.items() %}
+        <option value="{{ value }}" {{ 'selected' if value == '7' }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="check-row">
+      <input type="checkbox" name="redact">
+      <span><strong>Hide descriptions</strong><br><span class="xc-muted">Recipients see dates, categories and amounts only.</span></span>
+    </label>
+    <p class="form-error" data-error-for="share"></p>
+    <div class="modal__actions">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+      <button type="submit" class="btn btn-primary"><span class="spinner" aria-hidden="true"></span><span data-label>Create link</span></button>
+    </div>
+  </form>
+
+  <div class="share-result" data-share-result hidden>
+    <p class="share-result__title" data-share-title></p>
+    <div class="share-result__body">
+      <div class="qr-card" data-share-qr></div>
+      <div class="share-result__info">
+        <div class="copy-field">
+          <input class="form-input" type="text" readonly data-share-url aria-label="Share link">
+          <button type="button" class="btn btn-primary" data-share-copy>{{ icon('copy', 15) }} <span>Copy</span></button>
+        </div>
+        <ul class="share-facts">
+          <li>{{ icon('clock', 14) }} <span data-share-expires></span></li>
+          <li>{{ icon('eye', 14) }} <span data-share-views></span></li>
+          <li>{{ icon('lock', 14) }} <span data-share-redact></span></li>
+        </ul>
+        <p class="xc-footnote">Anyone who can reach this computer's address can open the link. Scan the code from a phone on the same network.</p>
+      </div>
+    </div>
+    <div class="modal__actions modal__actions--split">
+      <button type="button" class="btn btn-secondary btn-danger-text" data-share-revoke>Revoke link</button>
+      <span class="modal__actions-group">
+        <a class="btn btn-secondary" data-share-open target="_blank" rel="noopener">{{ icon('external', 15) }} Open</a>
+        <button type="button" class="btn btn-secondary" data-share-native hidden>{{ icon('share', 15) }} Share&hellip;</button>
+        <button type="button" class="btn btn-primary" data-close>Done</button>
+      </span>
+    </div>
+  </div>
+</dialog>

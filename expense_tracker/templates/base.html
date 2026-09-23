@@ -16,6 +16,9 @@
       <nav class="nav">
         <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if request.endpoint == 'dashboard.index' else '' }}">Dashboard</a>
         <a href="{{ url_for('expenses.list_view') }}" class="{{ 'active' if request.blueprint == 'expenses' else '' }}">Expenses</a>
+        <a href="{{ url_for('exports.center') }}" class="{{ 'active' if request.blueprint == 'exports' else '' }}">
+          Exports{% if active_export_count %}<span class="nav-activity" title="{{ active_export_count }} export(s) running"><span class="visually-hidden">, {{ active_export_count }} running</span></span>{% endif %}
+        </a>
       </nav>
     </div>
   </header>
@@ -26,5 +29,6 @@
   </main>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -16,10 +16,17 @@ the two share no code.
   charting library)
 - Search, category filter, date-range filter, and sorting on the Expenses page
 - CSV export of the currently filtered expenses
+- **Export Center** (`/exports`): report templates (Tax Report, Monthly Summary,
+  Category Analysis, Full Backup) run as background jobs with live progress, an
+  export history with SHA-256 fingerprints, expiring share links with QR codes and
+  optional description redaction, recurring schedules, and live sync that notices
+  when your data changes. Email delivery and the Google Sheets, Dropbox, OneDrive
+  and Slack connections are **simulated**: they show the full flow and a preview of
+  what would be delivered, but nothing leaves your computer.
 - Server-side form validation, flash-message toasts, inline delete confirmation
 - Responsive layout (card list on mobile, table on larger screens)
 - Automatic light/dark mode based on system preference
-- 25 automated tests (pytest) covering stats, CSV export, validation, and routes
+- 58 automated tests (pytest) covering stats, CSV export, validation, routes, and the Export Center
 
 ## Requirements
 

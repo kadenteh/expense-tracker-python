@@ -1,0 +1,37 @@
+{% from "exports/_icons.html" import icon %}
+{% if not shares %}
+  <div class="xc-empty xc-empty--compact">
+    <p>No shared links</p>
+    <p>Share any finished export as an expiring link or QR code.</p>
+  </div>
+{% else %}
+  <ul class="share-list">
+    {% for s in shares %}
+    <li class="share-item share-item--{{ s.status }}">
+      <div class="share-item__main">
+        <div class="share-item__title">
+          {% if s.redact %}<span class="share-item__lock" title="Descriptions hidden">{{ icon('lock', 12) }}</span>{% endif %}
+          {{ s.job_title }}
+        </div>
+        <div class="share-item__meta">
+          {% if s.status == 'expired' %}
+            <span class="share-item__expired">Expired</span>
+          {% elif s.expires_at %}
+            <span title="{{ s.expires_at | localtime }}">Expires {{ s.expires_at | timeago }}</span>
+          {% else %}
+            No expiry
+          {% endif %}
+          <span class="dot-sep">&middot;</span>{{ s.views }} view{{ 's' if s.views != 1 }}
+        </div>
+      </div>
+      <div class="share-item__actions">
+        {% if s.status == 'active' %}
+        <button type="button" class="icon-btn" data-action="show-share" data-token="{{ s.token }}" title="Show link and QR code" aria-label="Show link and QR code">{{ icon('qr', 15) }}</button>
+        <button type="button" class="icon-btn" data-action="copy-link" data-url="{{ share_url(s.token) }}" title="Copy link" aria-label="Copy link">{{ icon('copy', 15) }}</button>
+        {% endif %}
+        <button type="button" class="icon-btn danger" data-action="revoke-share" data-token="{{ s.token }}" title="{{ 'Remove' if s.status != 'active' else 'Revoke link' }}" aria-label="Revoke link">{{ icon('x', 15) }}</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+{% endif %}
