@@ -39,11 +39,13 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     from .routes.dashboard import bp as dashboard_bp
     from .routes.expenses import bp as expenses_bp
+    from .routes.export import bp as export_bp
     from .routes.exports import bp as exports_bp
     from .routes.share import bp as share_bp
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(expenses_bp)
+    app.register_blueprint(export_bp)
     app.register_blueprint(exports_bp)
     app.register_blueprint(share_bp)
 

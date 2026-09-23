@@ -22,6 +22,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/></svg>
         Export &amp; share
       </a>
+      <button type="button" class="btn btn-secondary" data-export-open aria-haspopup="dialog" aria-controls="export-dialog">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Export&hellip;
+      </button>
       <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
     </div>
   </div>
@@ -152,5 +156,12 @@
       {% endfor %}
     </ul>
   </section>
+  {% include "partials/export_dialog.html" %}
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {% if expenses %}
+  <script src="{{ url_for('static', filename='js/export.js') }}"></script>
+  {% endif %}
 {% endblock %}

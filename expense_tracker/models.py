@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Optional, Sequence
 
 from .db import get_db
 
@@ -152,3 +152,47 @@ def all_expenses() -> list[Expense]:
 
 def today_iso() -> str:
     return date.today().isoformat()
+
+
+def find_expenses(
+    date_from: str = "",
+    date_to: str = "",
+    categories: Optional[Sequence[str]] = None,
+    sort: str = "date-desc",
+) -> list[Expense]:
+    """Expenses in an inclusive date range, limited to `categories` (None means any)."""
+    clauses, params = _date_range_clauses(date_from, date_to)
+    if categories is not None:
+        if not categories:
+            return []
+        clauses.append(f"category IN ({', '.join('?' * len(categories))})")
+        params.extend(categories)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    order = SORT_OPTIONS.get(sort, SORT_OPTIONS["date-desc"])
+    rows = get_db().execute(f"SELECT * FROM expenses {where} ORDER BY {order}", params).fetchall()
+    return [Expense.from_row(r) for r in rows]
+
+
+def count_by_category(date_from: str = "", date_to: str = "") -> dict[str, int]:
+    """Number of expenses per category within an inclusive date range."""
+    clauses, params = _date_range_clauses(date_from, date_to)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = get_db().execute(
+        f"SELECT category, COUNT(*) AS n FROM expenses {where} GROUP BY category", params
+    ).fetchall()
+    counts = {c: 0 for c in CATEGORIES}
+    counts.update({r["category"]: r["n"] for r in rows})
+    return counts
+
+
+def _date_range_clauses(date_from: str, date_to: str) -> tuple[list[str], list]:
+    clauses: list[str] = []
+    params: list = []
+    if date_from:
+        clauses.append("date >= ?")
+        params.append(date_from)
+    if date_to:
+        clauses.append("date <= ?")
+        params.append(date_to)
+    return clauses, params
