@@ -25,6 +25,7 @@
         </div>
         <div class="activity-item__meta">
           <span>{{ dest.name if dest else j.destination_key }}</span>
+          {% if j.format in formats %}<span class="format-chip">{{ formats[j.format].label }}</span>{% endif %}
           {% if dest and dest.simulated %}<span class="sim-badge" title="No data left this computer">Simulated</span>{% endif %}
           {% if j.trigger in trigger_labels %}<span class="trigger-chip">{{ trigger_labels[j.trigger] }}</span>{% endif %}
         </div>
@@ -34,6 +35,11 @@
             <span style="width: {{ j.progress }}%"></span>
           </div>
           <p class="activity-item__stage">{{ j.stage }}&hellip;</p>
+        {% elif j.file_removed_at %}
+          <p class="activity-item__detail">
+            {{ '{:,}'.format(j.record_count or 0) }} record{{ 's' if j.record_count != 1 }}
+            <span class="fact"><span class="dot-sep">&middot;</span><span title="Removed {{ j.file_removed_at | localtime }}">File removed by retention policy</span></span>
+          </p>
         {% elif j.status == 'failed' %}
           <p class="activity-item__error">{{ icon('alert', 13) }} {{ j.error }}</p>
         {% else %}
@@ -58,11 +64,13 @@
       </div>
 
       <div class="activity-item__actions">
-        {% if j.status == 'done' %}
+        {% if j.has_file %}
           <a class="icon-btn" href="{{ url_for('exports.download', job_id=j.id) }}" title="Download {{ j.filename }}" aria-label="Download {{ j.filename }}">{{ icon('download', 16) }}</a>
-          {% if dest and dest.simulated %}
+        {% endif %}
+        {% if j.status == 'done' and dest and dest.simulated %}
           <a class="icon-btn" href="{{ url_for('exports.preview', job_id=j.id) }}" title="See what {{ dest.name }} received" aria-label="Preview {{ dest.name }} delivery">{{ icon('eye', 16) }}</a>
-          {% endif %}
+        {% endif %}
+        {% if j.has_file %}
           <button type="button" class="icon-btn" data-action="share-job" data-job="{{ j.id }}" title="Create share link" aria-label="Share {{ j.title }}">{{ icon('share', 16) }}</button>
         {% endif %}
         {% if not j.is_active %}

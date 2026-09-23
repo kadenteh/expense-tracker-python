@@ -13,6 +13,7 @@
         <div class="schedule__name">{{ s.template.name if s.template else s.template_key }} <span aria-hidden="true">&rarr;</span> {{ s.destination.name if s.destination else s.destination_key }}</div>
         <div class="schedule__meta">
           {{ frequencies[s.frequency] }}
+          {% if s.format in formats %}<span class="dot-sep">&middot;</span>{{ formats[s.format].label }}{% endif %}
           <span class="dot-sep">&middot;</span>
           {% if s.enabled %}
             <span title="{{ s.next_run_at | localtime }}">Next {{ s.next_run_at | timeago }}</span>

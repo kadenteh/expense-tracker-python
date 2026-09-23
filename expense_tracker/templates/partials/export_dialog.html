@@ -149,7 +149,10 @@
     </div>
 
     <footer class="export-dialog__footer">
-      <p class="export-dialog__status" id="export-status" role="status"></p>
+      <div class="export-dialog__status-wrap">
+        <p class="export-dialog__status" id="export-status" role="status"></p>
+        <a class="export-dialog__handoff" href="{{ url_for('exports.center') }}">Share, email or schedule instead &rarr;</a>
+      </div>
       <div class="export-dialog__actions">
         <button type="button" class="btn btn-secondary" data-export-close>Cancel</button>
         <button type="submit" class="btn btn-primary" id="export-submit" disabled>

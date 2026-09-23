@@ -3527,3 +3527,37 @@ textarea.form-input {
 .export-section__links .link-btn {
   font-size: inherit;
 }
+
+/* ---------- Combined export entry points ---------- */
+
+.format-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.45rem;
+  border-radius: 4px;
+  background: var(--page);
+  border: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.export-dialog__status-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.export-dialog__handoff {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.export-dialog__handoff:hover {
+  text-decoration: underline;
+}

@@ -33,11 +33,10 @@
   }
 
   async function api(method, url, body) {
-    const response = await fetch(url, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    // The server refuses API writes without this header (CSRF protection).
+    const headers = { [DATA.api_header[0]]: DATA.api_header[1] };
+    if (body) headers["Content-Type"] = "application/json";
+    const response = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
     let data = {};
     try {
       data = await response.json();
@@ -168,6 +167,7 @@
   const drawer = document.getElementById("new-export");
   const form = document.getElementById("new-export-form");
   const periodSelect = form.elements.period;
+  const formatSelect = form.elements.format;
   const repeatSelect = form.elements.repeat;
   const submitBtn = document.getElementById("new-export-submit");
   const summary = document.getElementById("new-export-summary");
@@ -188,6 +188,24 @@
     );
     const values = template.periods.map(([value]) => value);
     periodSelect.value = values.includes(current) ? current : template.default_period;
+  }
+
+  // Formats the template offers; Google Sheets can only take a table. A new
+  // template starts from its own default; other changes keep the current pick.
+  function populateFormats({ reset = false } = {}) {
+    const template = DATA.templates[selected("template").value];
+    const needsTable = selected("destination").value === "google-sheets";
+    const current = reset ? template.formats[0][0] : formatSelect.value;
+    formatSelect.replaceChildren(
+      ...template.formats.map(([value, label, tabular]) => {
+        const option = el("option", "", label + (needsTable && !tabular ? " (not for Sheets)" : ""));
+        option.value = value;
+        option.disabled = needsTable && !tabular;
+        return option;
+      })
+    );
+    const usable = [...formatSelect.options].filter((o) => !o.disabled).map((o) => o.value);
+    formatSelect.value = usable.includes(current) ? current : usable[0];
   }
 
   function syncDestinationTiles() {
@@ -239,6 +257,7 @@
     summary.replaceChildren(
       el("strong", "", template.name),
       " · " + (once ? periodSelect.selectedOptions[0]?.textContent || "" : DATA.frequencies[repeat].toLowerCase()),
+      " · " + (formatSelect.selectedOptions[0]?.textContent || ""),
       " → ",
       el("strong", "", destination.name)
     );
@@ -255,13 +274,18 @@
     repeatSelect.value = repeat || "once";
     clearErrors();
     populatePeriods();
+    populateFormats({ reset: true });
     syncDestinationTiles();
     updateDrawer();
     drawer.showModal();
   }
 
   form.addEventListener("change", (event) => {
-    if (event.target.name === "template") populatePeriods();
+    if (event.target.name === "template") {
+      populatePeriods();
+      populateFormats({ reset: true });
+    }
+    if (event.target.name === "destination") populateFormats();
     clearErrors();
     updateDrawer();
   });
@@ -275,6 +299,7 @@
       openConnect(key, () => {
         tile.querySelector("input").checked = true;
         syncDestinationTiles();
+        populateFormats();
         updateDrawer();
       });
     });
@@ -295,6 +320,7 @@
     event.preventDefault();
     const template = selected("template").value;
     const destination = selected("destination").value;
+    const format = formatSelect.value;
     const repeat = repeatSelect.value;
     const options = destinationOptions(destination);
 
@@ -302,8 +328,8 @@
     try {
       const { ok, data } =
         repeat === "once"
-          ? await api("POST", DATA.urls.jobs, { template, period: periodSelect.value, destination, options })
-          : await api("POST", DATA.urls.schedules, { template, destination, frequency: repeat, options });
+          ? await api("POST", DATA.urls.jobs, { template, period: periodSelect.value, format, destination, options })
+          : await api("POST", DATA.urls.schedules, { template, format, destination, frequency: repeat, options });
       if (!ok) {
         showErrors(data.errors || { general: firstError(data) });
         return;

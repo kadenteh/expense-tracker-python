@@ -18,12 +18,13 @@
       <p>An overview of your spending, updated in real time.</p>
     </div>
     <div class="page-header__actions">
-      <a class="btn btn-secondary" href="{{ url_for('exports.center') }}">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/></svg>
-        Export &amp; share
+      {# One click, no JavaScript needed: every expense as CSV, via the export engine. #}
+      <a class="btn btn-secondary" href="{{ url_for('export.download', format='csv') }}" download>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download CSV
       </a>
       <button type="button" class="btn btn-secondary" data-export-open aria-haspopup="dialog" aria-controls="export-dialog">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
         Export&hellip;
       </button>
       <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>

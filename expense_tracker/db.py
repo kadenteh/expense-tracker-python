@@ -14,6 +14,17 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (date);
 
+-- A counter bumped by every change to expenses, so "has anything changed
+-- since X?" is a single-row read instead of a scan of the whole table.
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+INSERT OR IGNORE INTO meta (key, value) VALUES ('expenses_version', 0);
+CREATE TRIGGER IF NOT EXISTS expenses_version_insert AFTER INSERT ON expenses
+BEGIN UPDATE meta SET value = value + 1 WHERE key = 'expenses_version'; END;
+CREATE TRIGGER IF NOT EXISTS expenses_version_update AFTER UPDATE ON expenses
+BEGIN UPDATE meta SET value = value + 1 WHERE key = 'expenses_version'; END;
+CREATE TRIGGER IF NOT EXISTS expenses_version_delete AFTER DELETE ON expenses
+BEGIN UPDATE meta SET value = value + 1 WHERE key = 'expenses_version'; END;
+
 -- Export Center ------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS export_jobs (
@@ -74,12 +85,27 @@ CREATE TABLE IF NOT EXISTS schedules (
 );
 """
 
+# Columns added after the first Export Center release. CREATE TABLE IF NOT
+# EXISTS won't add them to an existing database, so they're added here.
+MIGRATIONS = {
+    "export_jobs": {
+        "format": "TEXT NOT NULL DEFAULT ''",
+        "snapshot": "TEXT",  # JSON of the exported expenses, for faithful re-renders
+        "heartbeat_at": "TEXT",  # last progress write by the worker
+        "file_removed_at": "TEXT",  # set by the retention policy
+    },
+    "schedules": {
+        "format": "TEXT NOT NULL DEFAULT ''",
+    },
+}
+
 
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
         db_path = current_app.config["DATABASE"]
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        # Export jobs write from worker threads; wait for locks instead of failing.
+        g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES, timeout=15)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
@@ -94,8 +120,18 @@ def close_db(_exc=None) -> None:
 def init_db(app) -> None:
     with app.app_context():
         db = get_db()
+        db.execute("PRAGMA journal_mode = WAL")  # readers don't block the export worker's writes
         db.executescript(SCHEMA)
+        _migrate(db)
         db.commit()
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    for table, columns in MIGRATIONS.items():
+        existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+        for name, declaration in columns.items():
+            if name not in existing:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
 
 def register_db(app) -> None:

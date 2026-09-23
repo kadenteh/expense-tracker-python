@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-import csv
 import io
+import re
 
-from flask import Blueprint, Response, abort, render_template, send_file
+from flask import Blueprint, abort, make_response, render_template, request, send_file
 
-from ..cloud import store
+from ..cloud import jobs, store
+from ..exports import ReportTable
+from ..exports.report import HIDDEN
 from ..formatting import format_local, format_relative
 
 bp = Blueprint("share", __name__, url_prefix="/s")
 
-HIDDEN = "[hidden]"
+SHARE_PAGE_ROWS = 500
+VIEWED_COOKIE_DAYS = 30
+
+# Link unfurlers and crawlers fetch pages people haven't opened; don't count them.
+_BOT_AGENTS = re.compile(
+    r"bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|skypeuripreview|"
+    r"linkedinbot|discordbot|telegrambot|slackbot|twitterbot|vkshare|iframely|headless",
+    re.IGNORECASE,
+)
 
 
 def _active_link_and_job(token: str):
@@ -25,13 +35,9 @@ def _active_link_and_job(token: str):
     return link, job
 
 
-def _visible_rows(link: store.ShareLink, job: store.Job) -> list[list[str]]:
-    preview = job.preview or {}
-    column = preview.get("sensitive_column")
-    rows = preview.get("rows", [])
-    if not (link.redact and column is not None):
-        return rows
-    return [[HIDDEN if i == column else cell for i, cell in enumerate(row)] for row in rows]
+def _is_human_first_visit(token: str) -> bool:
+    agent = request.headers.get("User-Agent", "")
+    return not _BOT_AGENTS.search(agent) and request.cookies.get(f"seen_{token}") is None
 
 
 @bp.get("/<token>")
@@ -39,16 +45,32 @@ def view(token: str):
     link, job = _active_link_and_job(token)
     if job is None:
         return render_template("share/unavailable.html", link=link), 410
-    store.record_share_view(token)
-    return render_template(
-        "share/view.html",
-        link=link,
-        job=job,
-        rows=_visible_rows(link, job),
-        expires_label=("Expires " + format_relative(link.expires_at)) if link.expires_at else "No expiry",
-        expires_at=format_local(link.expires_at),
-        hidden=HIDDEN,
+
+    counted = _is_human_first_visit(token)
+    if counted:
+        store.record_share_view(token)
+
+    table = ReportTable.from_dict(job.preview)
+    if link.redact:
+        table = table.redacted()
+    response = make_response(
+        render_template(
+            "share/view.html",
+            link=link,
+            job=job,
+            table=table,
+            rows=table.rows[:SHARE_PAGE_ROWS],
+            can_download=job.has_file,
+            expires_label=("Expires " + format_relative(link.expires_at)) if link.expires_at else "No expiry",
+            expires_at=format_local(link.expires_at),
+            hidden=HIDDEN,
+        )
     )
+    if counted:
+        response.set_cookie(
+            f"seen_{token}", "1", max_age=VIEWED_COOKIE_DAYS * 86400, path=f"/s/{token}", httponly=True, samesite="Lax"
+        )
+    return response
 
 
 @bp.get("/<token>/download")
@@ -56,20 +78,18 @@ def download(token: str):
     link, job = _active_link_and_job(token)
     if job is None:
         abort(410)
-    if not link.redact:
-        row = store.get_job_file(job.id)
-        return send_file(
-            io.BytesIO(row["content"]), mimetype=row["mimetype"], as_attachment=True, download_name=row["filename"]
-        )
 
-    # Redacted links never hand out the original file, only the masked table.
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(job.preview["headers"])
-    writer.writerows(_visible_rows(link, job))
-    stem = (job.filename or "export").rsplit(".", 1)[0]
-    return Response(
-        buffer.getvalue().encode("utf-8-sig"),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={stem}-shared.csv"},
-    )
+    if link.redact:
+        # Re-rendered from the export's own snapshot: complete, same format,
+        # descriptions hidden. The original file is never served.
+        variant = jobs.render_job_variant(job, redact=True)
+        if variant is None:
+            abort(410)
+        content, filename, mimetype = variant
+    else:
+        row = store.get_job_file(job.id)
+        if row is None:
+            abort(410)
+        content, filename, mimetype = row["content"], row["filename"], row["mimetype"]
+
+    return send_file(io.BytesIO(content), mimetype=mimetype, as_attachment=True, download_name=filename)

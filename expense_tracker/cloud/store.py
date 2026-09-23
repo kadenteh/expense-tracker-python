@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import secrets
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ..db import get_db
+from ..models import Expense
 from .services import DESTINATIONS, INTEGRATIONS, Destination
 from .templates import TEMPLATES, ExportTemplate
 
@@ -31,11 +31,15 @@ def parse_iso(value: Optional[str]) -> Optional[datetime]:
 
 # ---------- Jobs ----------
 
-# Everything except the file bytes, which only the download route needs.
+# Everything except the file bytes and snapshot, which only file routes need.
 _JOB_COLUMNS = (
-    "id, template, period, destination, options, trigger, status, progress, stage, title, "
-    "filename, mimetype, size, checksum, record_count, preview, result, error, created_at, finished_at"
+    "id, template, period, format, destination, options, trigger, status, progress, stage, title, "
+    "filename, mimetype, size, checksum, record_count, preview, result, error, created_at, finished_at, "
+    "heartbeat_at, file_removed_at"
 )
+
+# A worker writes progress every few seconds; silence this long means it died.
+STALE_JOB_AFTER = timedelta(minutes=2)
 
 
 @dataclass
@@ -43,6 +47,7 @@ class Job:
     id: str
     template_key: str
     period: str
+    format: str
     destination_key: str
     options: dict
     trigger: str
@@ -60,6 +65,8 @@ class Job:
     error: Optional[str]
     created_at: datetime
     finished_at: Optional[datetime]
+    heartbeat_at: Optional[datetime]
+    file_removed_at: Optional[datetime]
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Job":
@@ -67,6 +74,7 @@ class Job:
             id=row["id"],
             template_key=row["template"],
             period=row["period"],
+            format=row["format"],
             destination_key=row["destination"],
             options=json.loads(row["options"] or "{}"),
             trigger=row["trigger"],
@@ -84,6 +92,8 @@ class Job:
             error=row["error"],
             created_at=parse_iso(row["created_at"]),
             finished_at=parse_iso(row["finished_at"]),
+            heartbeat_at=parse_iso(row["heartbeat_at"]),
+            file_removed_at=parse_iso(row["file_removed_at"]),
         )
 
     @property
@@ -93,6 +103,10 @@ class Job:
     @property
     def destination(self) -> Optional[Destination]:
         return DESTINATIONS.get(self.destination_key)
+
+    @property
+    def has_file(self) -> bool:
+        return self.status == "done" and self.file_removed_at is None
 
     @property
     def is_active(self) -> bool:
@@ -105,26 +119,61 @@ class Job:
         return (self.finished_at - self.created_at).total_seconds()
 
 
-def insert_job(template: str, period: str, destination: str, options: dict, trigger: str, title: str) -> str:
+def insert_job(
+    template: str, period: str, fmt: str, destination: str, options: dict, trigger: str, title: str
+) -> str:
     job_id = secrets.token_hex(6)
+    now = iso(now_utc())
     db = get_db()
     db.execute(
-        "INSERT INTO export_jobs (id, template, period, destination, options, trigger, status, stage, title, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, 'queued', 'Waiting in queue', ?, ?)",
-        (job_id, template, period, destination, json.dumps(options), trigger, title, iso(now_utc())),
+        "INSERT INTO export_jobs (id, template, period, format, destination, options, trigger, status, stage, "
+        "title, created_at, heartbeat_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting in queue', ?, ?, ?)",
+        (job_id, template, period, fmt, destination, json.dumps(options), trigger, title, now, now),
     )
     db.commit()
     return job_id
 
 
-def update_job(job_id: str, **fields) -> None:
-    for key in ("preview", "result"):
+def _encode(fields: dict) -> dict:
+    for key in ("preview", "result", "snapshot"):
         if key in fields and not isinstance(fields[key], (str, type(None))):
             fields[key] = json.dumps(fields[key])
+    return fields
+
+
+def update_job(job_id: str, **fields) -> None:
+    fields = _encode(fields)
     assignments = ", ".join(f"{name} = ?" for name in fields)
     db = get_db()
     db.execute(f"UPDATE export_jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id))
     db.commit()
+
+
+def advance_job(job_id: str, **fields) -> bool:
+    """Worker progress write. Only applies while the job is still queued/running,
+    so a job another process has failed (or a user has deleted) is never revived.
+    Returns False when the worker should stop."""
+    fields = _encode(fields)
+    fields["heartbeat_at"] = iso(now_utc())
+    assignments = ", ".join(f"{name} = ?" for name in fields)
+    db = get_db()
+    cur = db.execute(
+        f"UPDATE export_jobs SET {assignments} WHERE id = ? AND status IN ('queued', 'running')",
+        (*fields.values(), job_id),
+    )
+    db.commit()
+    return cur.rowcount == 1
+
+
+def serialize_expenses(expenses: list[Expense]) -> list[dict]:
+    return [asdict(e) for e in expenses]
+
+
+def get_job_snapshot(job_id: str) -> Optional[list[Expense]]:
+    row = get_db().execute("SELECT snapshot FROM export_jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row or row["snapshot"] is None:
+        return None
+    return [Expense(**e) for e in json.loads(row["snapshot"])]
 
 
 def get_job(job_id: str) -> Optional[Job]:
@@ -134,7 +183,9 @@ def get_job(job_id: str) -> Optional[Job]:
 
 def get_job_file(job_id: str) -> Optional[sqlite3.Row]:
     return get_db().execute(
-        "SELECT filename, mimetype, content FROM export_jobs WHERE id = ? AND status = 'done'", (job_id,)
+        "SELECT filename, mimetype, content FROM export_jobs "
+        "WHERE id = ? AND status = 'done' AND content IS NOT NULL",
+        (job_id,),
     ).fetchone()
 
 
@@ -166,15 +217,45 @@ def has_active_job(destination: str) -> bool:
     )
 
 
-def fail_orphaned_jobs() -> None:
-    """Jobs left queued/running by a previous server process will never finish."""
+def fail_stale_jobs(now: Optional[datetime] = None) -> int:
+    """Fails jobs whose worker has stopped reporting progress (process restarted or
+    crashed). Jobs still heart-beating belong to a live worker, possibly in another
+    process, and are left alone."""
+    now = now or now_utc()
     db = get_db()
-    db.execute(
-        "UPDATE export_jobs SET status = 'failed', error = 'Interrupted by a server restart', finished_at = ? "
-        "WHERE status IN ('queued', 'running')",
-        (iso(now_utc()),),
+    cur = db.execute(
+        "UPDATE export_jobs SET status = 'failed', stage = 'Failed', error = 'Interrupted: the worker stopped "
+        "responding (server restart?)', finished_at = ? WHERE status IN ('queued', 'running') "
+        "AND COALESCE(heartbeat_at, created_at) < ?",
+        (iso(now), iso(now - STALE_JOB_AFTER)),
     )
     db.commit()
+    return cur.rowcount
+
+
+def prune_job_files(keep_count: int, max_age_days: int, now: Optional[datetime] = None) -> int:
+    """Retention: drops the stored file and snapshot of old exports, keeping the
+    history row. Exports behind a live share link are kept whatever their age."""
+    now = now or now_utc()
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, preview FROM export_jobs WHERE status = 'done' AND file_removed_at IS NULL "
+        "AND id NOT IN (SELECT job_id FROM share_links WHERE revoked_at IS NULL "
+        "               AND (expires_at IS NULL OR expires_at > ?)) "
+        "AND (created_at < ? OR id NOT IN (SELECT id FROM export_jobs WHERE status = 'done' "
+        "                                  ORDER BY created_at DESC, rowid DESC LIMIT ?))",
+        (iso(now), iso(now - timedelta(days=max_age_days)), keep_count),
+    ).fetchall()
+    for row in rows:
+        preview = json.loads(row["preview"]) if row["preview"] else None
+        if preview:
+            preview["rows"] = preview["rows"][:50]  # enough for the delivery preview page
+        db.execute(
+            "UPDATE export_jobs SET content = NULL, snapshot = NULL, preview = ?, file_removed_at = ? WHERE id = ?",
+            (json.dumps(preview) if preview else None, iso(now), row["id"]),
+        )
+    db.commit()
+    return len(rows)
 
 
 # ---------- Share links ----------
@@ -299,8 +380,9 @@ def set_auto_sync(key: str, enabled: bool) -> None:
 
 
 def mark_synced(key: str, fingerprint: str, synced_at: datetime) -> None:
-    """`synced_at` is when `fingerprint` was taken, at full precision, so
-    count_added_since() can tell apart expenses added in the same second."""
+    """`fingerprint` is the data_version() the export was built from; `synced_at` is
+    when it was taken, at full precision, so count_added_since() can tell apart
+    expenses added in the same second."""
     db = get_db()
     db.execute(
         "UPDATE integrations SET last_sync_at = ?, last_sync_fingerprint = ? WHERE key = ?",
@@ -312,14 +394,10 @@ def mark_synced(key: str, fingerprint: str, synced_at: datetime) -> None:
 # ---------- Change detection ----------
 
 
-def expenses_fingerprint() -> str:
-    """A hash of every expense, so any add, edit or delete changes it."""
-    digest = hashlib.sha256()
-    for row in get_db().execute(
-        "SELECT id, description, amount, category, date FROM expenses ORDER BY id"
-    ):
-        digest.update("|".join(str(v) for v in row).encode("utf-8") + b"\n")
-    return digest.hexdigest()
+def data_version() -> str:
+    """Changes on every add, edit or delete (maintained by triggers in db.py)."""
+    row = get_db().execute("SELECT value FROM meta WHERE key = 'expenses_version'").fetchone()
+    return f"v{row['value']}"
 
 
 def count_added_since(moment: datetime) -> int:
@@ -337,6 +415,7 @@ class Schedule:
     template_key: str
     destination_key: str
     frequency: str
+    format: str
     options: dict
     enabled: bool
     next_run_at: datetime
@@ -350,6 +429,7 @@ class Schedule:
             template_key=row["template"],
             destination_key=row["destination"],
             frequency=row["frequency"],
+            format=row["format"],
             options=json.loads(row["options"] or "{}"),
             enabled=bool(row["enabled"]),
             next_run_at=parse_iso(row["next_run_at"]),
@@ -366,12 +446,14 @@ class Schedule:
         return DESTINATIONS.get(self.destination_key)
 
 
-def create_schedule(template: str, destination: str, frequency: str, options: dict, next_run: datetime) -> int:
+def create_schedule(
+    template: str, fmt: str, destination: str, frequency: str, options: dict, next_run: datetime
+) -> int:
     db = get_db()
     cur = db.execute(
-        "INSERT INTO schedules (template, destination, frequency, options, next_run_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (template, destination, frequency, json.dumps(options), iso(next_run), iso(now_utc())),
+        "INSERT INTO schedules (template, format, destination, frequency, options, next_run_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (template, fmt, destination, frequency, json.dumps(options), iso(next_run), iso(now_utc())),
     )
     db.commit()
     return cur.lastrowid
@@ -392,6 +474,18 @@ def due_schedules(moment: datetime) -> list[Schedule]:
         "SELECT * FROM schedules WHERE enabled = 1 AND next_run_at <= ?", (iso(moment),)
     ).fetchall()
     return [Schedule.from_row(r) for r in rows]
+
+
+def claim_schedule_run(schedule: Schedule, next_run: datetime) -> bool:
+    """Atomically moves a due schedule to its next run. Only one caller (thread or
+    process) can win for a given due time, so a run can't start twice."""
+    db = get_db()
+    cur = db.execute(
+        "UPDATE schedules SET next_run_at = ? WHERE id = ? AND enabled = 1 AND next_run_at = ?",
+        (iso(next_run), schedule.id, iso(schedule.next_run_at)),
+    )
+    db.commit()
+    return cur.rowcount == 1
 
 
 def update_schedule(schedule_id: int, **fields) -> None:

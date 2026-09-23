@@ -24,9 +24,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     register_db(app)
     with app.app_context():
-        from .cloud.store import fail_orphaned_jobs
+        from .cloud.store import fail_stale_jobs
 
-        fail_orphaned_jobs()
+        fail_stale_jobs()
 
     app.jinja_env.filters["currency"] = format_currency
     app.jinja_env.filters["nicedate"] = format_date

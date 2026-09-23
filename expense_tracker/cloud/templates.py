@@ -1,45 +1,23 @@
-"""Export templates: purpose-built reports generated from the expense data.
+"""Export templates: named presets on top of the export engine.
 
-Every template produces a real file plus a small table and headline figures
-that the previews (email, sheet, share page) render.
+A template turns a period ("2026", "2026-09", "3") into engine options (a
+date range and sort order), picks which formats make sense, and supplies the
+summary table that previews, share pages and the Summary CSV show. The
+engine does the querying and file rendering, so every template gets the same
+formula-safe CSV, JSON and PDF output.
 """
 
 from __future__ import annotations
 
-import csv
-import io
-import json
+import calendar
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+from ..exports import ExportOptions, ExportReport, ReportTable, build_report, itemized_table
 from ..formatting import format_currency, format_date
-from ..models import CATEGORIES, Expense, all_expenses
-
-PREVIEW_ROW_CAP = 500
-
-
-@dataclass
-class ExportArtifact:
-    title: str
-    filename: str
-    mimetype: str
-    content: bytes
-    record_count: int
-    headers: list[str]
-    rows: list[list[str]]
-    highlights: list[tuple[str, str]] = field(default_factory=list)
-    sensitive_column: Optional[int] = None  # column holding free-text descriptions
-
-    def preview(self) -> dict:
-        return {
-            "headers": self.headers,
-            "rows": self.rows[:PREVIEW_ROW_CAP],
-            "row_count": len(self.rows),
-            "highlights": self.highlights,
-            "sensitive_column": self.sensitive_column,
-        }
+from ..models import CATEGORIES, Expense, find_expenses
 
 
 @dataclass(frozen=True)
@@ -49,13 +27,31 @@ class ExportTemplate:
     tagline: str
     description: str
     icon: str  # name of an inline SVG icon in templates/exports/_icons.html
+    formats: tuple[str, ...]  # allowed engine formats; the first is the default
     periods: Callable[[], list[tuple[str, str]]]
     default_period: Callable[[], str]
     scheduled_period: Callable[[], str]  # the period a recurring run should cover
-    build: Callable[[str], ExportArtifact]
+    date_range: Callable[[str], tuple[str, str]]
+    filename_stem: Callable[[str], str]
+    summarize: Optional[Callable[[ExportReport], ReportTable]] = None  # None: the itemized list
+    sort: str = "date-desc"
 
     def period_label(self, period: str) -> str:
         return dict(self.periods()).get(period, period)
+
+    def title_for(self, period: str) -> str:
+        return f"{self.name} · {self.period_label(period)}"
+
+    def options_for(self, period: str, fmt: str) -> ExportOptions:
+        date_from, date_to = self.date_range(period)
+        return ExportOptions(
+            format=fmt, date_from=date_from, date_to=date_to, sort=self.sort, filename=self.filename_stem(period)
+        )
+
+    def build(self, period: str, fmt: str) -> ExportReport:
+        report = build_report(self.options_for(period, fmt), title=self.title_for(period))
+        report.table = self.summarize(report) if self.summarize else itemized_table(report)
+        return report
 
 
 # ---------- Period helpers ----------
@@ -76,19 +72,9 @@ def _month_label(key: str) -> str:
     return date(year, month, 1).strftime("%B %Y")
 
 
-def _recent_months(count: int = 12) -> list[str]:
-    current = _month_key(date.today())
-    return [_shift_month(current, -i) for i in range(count)]
-
-
-def _money(amount: float) -> str:
-    return f"{amount:.2f}"
-
-
-def _write_csv(rows: list[list]) -> bytes:
-    buffer = io.StringIO()
-    csv.writer(buffer, lineterminator="\r\n").writerows(rows)
-    return buffer.getvalue().encode("utf-8-sig")
+def _month_range(key: str) -> tuple[str, str]:
+    year, month = map(int, key.split("-"))
+    return f"{key}-01", f"{key}-{calendar.monthrange(year, month)[1]:02d}"
 
 
 def _category_totals(expenses: list[Expense]) -> dict[str, list[float]]:
@@ -98,50 +84,30 @@ def _category_totals(expenses: list[Expense]) -> dict[str, list[float]]:
     return dict(sorted(buckets.items(), key=lambda kv: sum(kv[1]), reverse=True))
 
 
-def _expense_rows(expenses: list[Expense]) -> list[list[str]]:
-    return [[format_date(e.date), e.category, e.description, format_currency(e.amount)] for e in expenses]
-
-
-EXPENSE_HEADERS = ["Date", "Category", "Description", "Amount"]
+def _percent_change(now: float, before: float) -> str:
+    if not before:
+        return "new" if now else "—"
+    return f"{(now - before) / before * 100:+.0f}%"
 
 
 # ---------- Tax report ----------
 
 
 def _tax_periods() -> list[tuple[str, str]]:
-    years = {int(e.date[:4]) for e in all_expenses()} | {date.today().year}
+    years = {int(e.date[:4]) for e in find_expenses()} | {date.today().year}
     return [(str(y), f"Tax year {y}") for y in sorted(years, reverse=True)]
 
 
-def _build_tax_report(period: str) -> ExportArtifact:
-    expenses = sorted((e for e in all_expenses() if e.date.startswith(period + "-")), key=lambda e: e.date)
-    totals = _category_totals(expenses)
-    grand_total = sum(e.amount for e in expenses)
-
-    rows: list[list] = [["Tax Report", period], ["Generated", date.today().isoformat()], []]
-    rows.append(["Date", "Category", "Description", "Amount"])
-    rows += [[e.date, e.category, e.description, _money(e.amount)] for e in expenses]
-    rows += [[], ["Category subtotals"], ["Category", "Transactions", "Amount"]]
-    rows += [[c, len(a), _money(sum(a))] for c, a in totals.items()]
-    rows += [["Total", len(expenses), _money(grand_total)]]
-
-    top = next(iter(totals), None)
-    return ExportArtifact(
-        title=f"Tax Report · {period}",
-        filename=f"tax-report-{period}.csv",
-        mimetype="text/csv",
-        content=_write_csv(rows),
-        record_count=len(expenses),
-        headers=EXPENSE_HEADERS,
-        rows=_expense_rows(expenses),
-        highlights=[
-            ("Tax year", period),
-            ("Transactions", f"{len(expenses):,}"),
-            ("Total", format_currency(grand_total)),
-            ("Largest category", top or "—"),
-        ],
-        sensitive_column=2,
-    )
+def _summarize_tax(report: ExportReport) -> ReportTable:
+    table = itemized_table(report)
+    top = report.by_category[0].category if report.by_category else "—"
+    table.highlights = [
+        ("Tax year", report.options.date_from[:4]),
+        ("Transactions", f"{report.count:,}"),
+        ("Total", format_currency(report.total)),
+        ("Largest category", top),
+    ]
+    return table
 
 
 TAX_REPORT = ExportTemplate(
@@ -150,69 +116,44 @@ TAX_REPORT = ExportTemplate(
     tagline="Year-end, accountant-ready",
     description="Every expense for a tax year with category subtotals, ready to hand to your accountant.",
     icon="receipt",
+    formats=("pdf", "csv", "json"),
     periods=_tax_periods,
     default_period=lambda: str(date.today().year),
     scheduled_period=lambda: str(date.today().year),
-    build=_build_tax_report,
+    date_range=lambda year: (f"{year}-01-01", f"{year}-12-31"),
+    filename_stem=lambda year: f"tax-report-{year}",
+    summarize=_summarize_tax,
+    sort="date-asc",
 )
 
 
 # ---------- Monthly summary ----------
 
 
-def _monthly_periods() -> list[tuple[str, str]]:
-    return [(m, _month_label(m)) for m in _recent_months()]
-
-
-def _build_monthly_summary(period: str) -> ExportArtifact:
-    everything = all_expenses()
-    month = [e for e in everything if e.date.startswith(period + "-")]
-    previous_key = _shift_month(period, -1)
-    previous = [e for e in everything if e.date.startswith(previous_key + "-")]
-
-    total = sum(e.amount for e in month)
-    previous_total = sum(e.amount for e in previous)
+def _summarize_month(report: ExportReport) -> ReportTable:
+    month = report.options.date_from[:7]
+    previous_from, previous_to = _month_range(_shift_month(month, -1))
+    previous = find_expenses(date_from=previous_from, date_to=previous_to)
     previous_by_cat = {c: sum(a) for c, a in _category_totals(previous).items()}
+    previous_total = sum(e.amount for e in previous)
 
-    table: list[list[str]] = []
-    csv_rows: list[list] = [["Monthly Summary", _month_label(period)], []]
-    csv_rows.append(["Category", "Transactions", "Total", "Share", "Previous month", "Change"])
-    for category, amounts in _category_totals(month).items():
-        cat_total = sum(amounts)
-        share = cat_total / total * 100 if total else 0
-        before = previous_by_cat.get(category, 0.0)
-        change = _percent_change(cat_total, before)
-        csv_rows.append([category, len(amounts), _money(cat_total), f"{share:.1f}%", _money(before), change])
-        table.append([category, str(len(amounts)), format_currency(cat_total), f"{share:.0f}%", change])
-    csv_rows += [[], ["Total", len(month), _money(total), "100%", _money(previous_total), _percent_change(total, previous_total)]]
-
-    busiest = max(month, key=lambda e: e.amount, default=None)
-    return ExportArtifact(
-        title=f"Monthly Summary · {_month_label(period)}",
-        filename=f"monthly-summary-{period}.csv",
-        mimetype="text/csv",
-        content=_write_csv(csv_rows),
-        record_count=len(month),
+    rows = []
+    for c in report.by_category:
+        rows.append([
+            c.category, str(c.count), format_currency(c.total), f"{c.percent:.0f}%",
+            _percent_change(c.total, previous_by_cat.get(c.category, 0.0)),
+        ])
+    biggest = max(report.expenses, key=lambda e: e.amount, default=None)
+    return ReportTable(
         headers=["Category", "Transactions", "Total", "Share", "vs. last month"],
-        rows=table,
+        rows=rows,
         highlights=[
-            ("Month", _month_label(period)),
-            ("Spent", format_currency(total)),
-            ("vs. last month", _percent_change(total, previous_total)),
-            ("Biggest expense", format_currency(busiest.amount) if busiest else "—"),
+            ("Month", _month_label(month)),
+            ("Spent", format_currency(report.total)),
+            ("vs. last month", _percent_change(report.total, previous_total)),
+            ("Biggest expense", format_currency(biggest.amount) if biggest else "—"),
         ],
     )
-
-
-def _percent_change(now: float, before: float) -> str:
-    if not before:
-        return "new" if now else "—"
-    change = (now - before) / before * 100
-    return f"{change:+.0f}%"
-
-
-def _previous_month() -> str:
-    return _shift_month(_month_key(date.today()), -1)
 
 
 MONTHLY_SUMMARY = ExportTemplate(
@@ -221,10 +162,13 @@ MONTHLY_SUMMARY = ExportTemplate(
     tagline="Where the month went",
     description="Category totals for one month, with the change against the month before.",
     icon="calendar",
-    periods=_monthly_periods,
+    formats=("summary", "pdf", "csv"),
+    periods=lambda: [(m, _month_label(m)) for m in (_shift_month(_month_key(date.today()), -i) for i in range(12))],
     default_period=lambda: _month_key(date.today()),
-    scheduled_period=_previous_month,
-    build=_build_monthly_summary,
+    scheduled_period=lambda: _shift_month(_month_key(date.today()), -1),
+    date_range=_month_range,
+    filename_stem=lambda month: f"monthly-summary-{month}",
+    summarize=_summarize_month,
 )
 
 
@@ -233,46 +177,32 @@ MONTHLY_SUMMARY = ExportTemplate(
 _ANALYSIS_WINDOWS = {"3": "Last 3 months", "6": "Last 6 months", "12": "Last 12 months", "all": "All time"}
 
 
-def _build_category_analysis(period: str) -> ExportArtifact:
-    expenses = all_expenses()
-    if period != "all":
-        first_month = _shift_month(_month_key(date.today()), -(int(period) - 1))
-        expenses = [e for e in expenses if e.date[:7] >= first_month]
-    total = sum(e.amount for e in expenses)
-    months = len({e.date[:7] for e in expenses}) or 1
+def _analysis_range(period: str) -> tuple[str, str]:
+    if period == "all":
+        return "", ""
+    first_month = _shift_month(_month_key(date.today()), -(int(period) - 1))
+    return f"{first_month}-01", date.today().isoformat()
 
-    table: list[list[str]] = []
-    csv_rows: list[list] = [["Category Analysis", _ANALYSIS_WINDOWS[period]], []]
-    csv_rows.append(["Category", "Transactions", "Total", "Average", "Largest", "Share", "Monthly average"])
-    by_category = _category_totals(expenses)
-    for category, amounts in by_category.items():
-        cat_total = sum(amounts)
-        share = cat_total / total * 100 if total else 0
-        csv_rows.append([
-            category, len(amounts), _money(cat_total), _money(cat_total / len(amounts)),
-            _money(max(amounts)), f"{share:.1f}%", _money(cat_total / months),
-        ])
-        table.append([
-            category, str(len(amounts)), format_currency(cat_total),
-            format_currency(cat_total / len(amounts)), format_currency(max(amounts)), f"{share:.0f}%",
-        ])
-    unused = [c for c in CATEGORIES if c not in by_category]
-    if unused:
-        csv_rows += [[], ["Unused categories", ", ".join(unused)]]
 
-    return ExportArtifact(
-        title=f"Category Analysis · {_ANALYSIS_WINDOWS[period]}",
-        filename=f"category-analysis-{period}{'' if period == 'all' else 'm'}.csv",
-        mimetype="text/csv",
-        content=_write_csv(csv_rows),
-        record_count=len(expenses),
+def _summarize_categories(report: ExportReport) -> ReportTable:
+    months = len({e.date[:7] for e in report.expenses}) or 1
+    amounts = _category_totals(report.expenses)
+    rows = []
+    for c in report.by_category:
+        values = amounts[c.category]
+        rows.append([
+            c.category, str(c.count), format_currency(c.total), format_currency(c.total / c.count),
+            format_currency(max(values)), f"{c.percent:.0f}%",
+        ])
+    window = f"Since {format_date(report.options.date_from)}" if report.options.date_from else "All time"
+    return ReportTable(
         headers=["Category", "Transactions", "Total", "Average", "Largest", "Share"],
-        rows=table,
+        rows=rows,
         highlights=[
-            ("Window", _ANALYSIS_WINDOWS[period]),
-            ("Top category", next(iter(by_category), "—")),
-            ("Categories used", f"{len(by_category)} of {len(CATEGORIES)}"),
-            ("Monthly average", format_currency(total / months)),
+            ("Window", window),
+            ("Top category", rows[0][0] if rows else "—"),
+            ("Categories used", f"{len(rows)} of {len(CATEGORIES)}"),
+            ("Monthly average", format_currency(report.total / months)),
         ],
     )
 
@@ -283,52 +213,28 @@ CATEGORY_ANALYSIS = ExportTemplate(
     tagline="Spot the patterns",
     description="Per-category counts, totals, averages and largest purchases over a rolling window.",
     icon="chart",
+    formats=("summary", "pdf", "json"),
     periods=lambda: list(_ANALYSIS_WINDOWS.items()),
     default_period=lambda: "3",
     scheduled_period=lambda: "3",
-    build=_build_category_analysis,
+    date_range=_analysis_range,
+    filename_stem=lambda period: f"category-analysis-{period}{'' if period == 'all' else 'm'}",
+    summarize=_summarize_categories,
 )
 
 
 # ---------- Full backup ----------
 
 
-def _build_full_backup(period: str) -> ExportArtifact:
-    expenses = all_expenses()
-    payload = {
-        "format": "expense-tracker-backup",
-        "version": 1,
-        "exported_on": date.today().isoformat(),
-        "record_count": len(expenses),
-        "expenses": [
-            {
-                "id": e.id,
-                "date": e.date,
-                "category": e.category,
-                "amount": round(e.amount, 2),
-                "description": e.description,
-                "created_at": e.created_at,
-            }
-            for e in expenses
-        ],
-    }
-    total = sum(e.amount for e in expenses)
-    return ExportArtifact(
-        title="Full Backup",
-        filename=f"expense-backup-{date.today().isoformat()}.json",
-        mimetype="application/json",
-        content=(json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
-        record_count=len(expenses),
-        headers=EXPENSE_HEADERS,
-        rows=_expense_rows(expenses),
-        highlights=[
-            ("Records", f"{len(expenses):,}"),
-            ("Total", format_currency(total)),
-            ("Oldest", format_date(expenses[-1].date) if expenses else "—"),
-            ("Newest", format_date(expenses[0].date) if expenses else "—"),
-        ],
-        sensitive_column=2,
-    )
+def _summarize_backup(report: ExportReport) -> ReportTable:
+    table = itemized_table(report)
+    table.highlights = [
+        ("Records", f"{report.count:,}"),
+        ("Total", format_currency(report.total)),
+        ("Oldest", format_date(report.first_date) if report.first_date else "—"),
+        ("Newest", format_date(report.last_date) if report.last_date else "—"),
+    ]
+    return table
 
 
 FULL_BACKUP = ExportTemplate(
@@ -337,10 +243,13 @@ FULL_BACKUP = ExportTemplate(
     tagline="Everything, restorable",
     description="Every expense as structured JSON. What scheduled backups and live sync send.",
     icon="archive",
+    formats=("json", "csv"),
     periods=lambda: [("all", "All data")],
     default_period=lambda: "all",
     scheduled_period=lambda: "all",
-    build=_build_full_backup,
+    date_range=lambda _period: ("", ""),
+    filename_stem=lambda _period: f"expense-backup-{date.today().isoformat()}",
+    summarize=_summarize_backup,
 )
 
 

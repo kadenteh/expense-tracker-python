@@ -15,18 +15,23 @@ the two share no code.
   (both charts are plain inline SVG, computed server-side in Python — no JS
   charting library)
 - Search, category filter, date-range filter, and sorting on the Expenses page
-- CSV export of the currently filtered expenses
-- **Export Center** (`/exports`): report templates (Tax Report, Monthly Summary,
-  Category Analysis, Full Backup) run as background jobs with live progress, an
-  export history with SHA-256 fingerprints, expiring share links with QR codes and
-  optional description redaction, recurring schedules, and live sync that notices
-  when your data changes. Email delivery and the Google Sheets, Dropbox, OneDrive
-  and Slack connections are **simulated**: they show the full flow and a preview of
-  what would be delivered, but nothing leaves your computer.
+- **Data export**, three ways, all built on one export engine (`expense_tracker/exports/`):
+  - **Download CSV** on the dashboard: every expense in one click, no JavaScript needed.
+  - **Export…** dialog: CSV, JSON or PDF with date-range and category filters, a live
+    preview, and a custom file name. The Expenses page also exports its current filters.
+  - **Export Center** (`/exports`): report templates (Tax Report, Monthly Summary,
+    Category Analysis, Full Backup) in a choice of formats, run as background jobs with
+    live progress; export history with SHA-256 fingerprints and a retention policy;
+    expiring share links with QR codes and optional description redaction; recurring
+    schedules; and live sync that notices when your data changes. Email delivery and the
+    Google Sheets, Dropbox, OneDrive and Slack connections are **simulated**: they show
+    the full flow and a preview of what would be delivered, but nothing leaves your computer.
+  - Every CSV has a UTF-8 BOM and is protected against spreadsheet formula injection.
+    PDFs use the built-in Helvetica font, so they support Western European characters only.
 - Server-side form validation, flash-message toasts, inline delete confirmation
 - Responsive layout (card list on mobile, table on larger screens)
 - Automatic light/dark mode based on system preference
-- 58 automated tests (pytest) covering stats, CSV export, validation, routes, and the Export Center
+- 113 automated tests (pytest) covering stats, validation, routes, the export engine and the Export Center
 
 ## Requirements
 

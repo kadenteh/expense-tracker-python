@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from io import BytesIO
 
+from urllib.parse import urlsplit
+
 from flask import (
     Blueprint,
     abort,
@@ -17,9 +19,28 @@ from ..cloud import jobs, store
 from ..cloud.qr import qr_svg
 from ..cloud.services import DESTINATIONS, FREQUENCIES, INTEGRATIONS, SHARE_EXPIRY_OPTIONS
 from ..cloud.templates import TEMPLATES
+from ..exports import ALL_FORMATS
 from ..formatting import format_local, format_relative
 
 bp = Blueprint("exports", __name__, url_prefix="/exports")
+
+# Sent by export-center.js on every API call. A cross-site form or link can't
+# set a custom header, and a cross-site script would need a CORS preflight that
+# this app never approves, so requiring it blocks CSRF on the JSON API.
+API_HEADER = "X-Requested-With"
+API_HEADER_VALUE = "ExportCenter"
+
+
+@bp.before_request
+def protect_api():
+    if request.method in ("GET", "HEAD", "OPTIONS") or not request.path.startswith("/exports/api/"):
+        return None
+    if request.headers.get(API_HEADER) != API_HEADER_VALUE:
+        return jsonify(errors={"request": "Missing API header."}), 403
+    origin = request.headers.get("Origin")
+    if origin and urlsplit(origin).netloc != request.host:
+        return jsonify(errors={"request": "Cross-origin request refused."}), 403
+    return None
 
 
 @bp.app_context_processor
@@ -55,13 +76,13 @@ def _share_url(token: str) -> str:
 
 
 def _panel_context() -> dict:
-    fingerprint = store.expenses_fingerprint()
+    version = store.data_version()
     connected = store.connected_services()
     services = [
         {
             "integration": integration,
             "row": connected.get(key),
-            "sync": jobs.sync_state(key, connected[key], fingerprint) if key in connected else None,
+            "sync": jobs.sync_state(key, connected[key], version) if key in connected else None,
             "last_sync": store.parse_iso(connected[key]["last_sync_at"]) if key in connected else None,
         }
         for key, integration in INTEGRATIONS.items()
@@ -81,6 +102,7 @@ def _panel_context() -> dict:
         "format_size": jobs.format_size,
         "integrations_catalog": INTEGRATIONS,
         "frequencies": FREQUENCIES,
+        "formats": ALL_FORMATS,
     }
 
 
@@ -102,6 +124,7 @@ def _client_data(connected_keys: list[str]) -> dict:
                 "periods": t.periods(),
                 "default_period": t.default_period(),
                 "scheduled_period": t.period_label(t.scheduled_period()),
+                "formats": [[f, ALL_FORMATS[f].label, ALL_FORMATS[f].tabular] for f in t.formats],
             }
             for key, t in TEMPLATES.items()
         },
@@ -121,6 +144,7 @@ def _client_data(connected_keys: list[str]) -> dict:
         },
         "frequencies": FREQUENCIES,
         "connected": connected_keys,
+        "api_header": [API_HEADER, API_HEADER_VALUE],
         "urls": {
             "panels": url_for("exports.panels"),
             "jobs": url_for("exports.create_job"),
@@ -179,7 +203,11 @@ def create_job():
     body = request.get_json(silent=True) or {}
     try:
         job_id = jobs.start_job(
-            body.get("template", ""), body.get("period", ""), body.get("destination", ""), body.get("options") or {}
+            body.get("template", ""),
+            body.get("period", ""),
+            body.get("destination", ""),
+            body.get("options") or {},
+            fmt=body.get("format", ""),
         )
     except jobs.ExportRequestError as exc:
         return _error_response(exc)
@@ -207,6 +235,9 @@ def delete(job_id: str):
 def download(job_id: str):
     row = store.get_job_file(job_id)
     if not row:
+        job = store.get_job(job_id)
+        if job and job.file_removed_at:
+            return "This export's file was removed by the retention policy. Run it again to get a fresh copy.", 410
         abort(404)
     return send_file(
         BytesIO(row["content"]), mimetype=row["mimetype"], as_attachment=True, download_name=row["filename"]
@@ -244,8 +275,8 @@ def _share_payload(link: store.ShareLink) -> dict:
 @bp.post("/api/jobs/<job_id>/share")
 def share_job(job_id: str):
     job = store.get_job(job_id)
-    if not job or job.status != "done":
-        return jsonify(errors={"job": "Only finished exports can be shared."}), 400
+    if not job or not job.has_file:
+        return jsonify(errors={"job": "Only finished exports that still have their file can be shared."}), 400
     body = request.get_json(silent=True) or {}
     expiry = str(body.get("expiry", "7"))
     if expiry not in SHARE_EXPIRY_OPTIONS:
@@ -331,7 +362,11 @@ def create_schedule():
     body = request.get_json(silent=True) or {}
     try:
         schedule_id = jobs.create_schedule(
-            body.get("template", ""), body.get("destination", ""), body.get("frequency", ""), body.get("options") or {}
+            body.get("template", ""),
+            body.get("destination", ""),
+            body.get("frequency", ""),
+            body.get("options") or {},
+            fmt=body.get("format", ""),
         )
     except jobs.ExportRequestError as exc:
         return _error_response(exc)

@@ -21,7 +21,9 @@
           <span title="{{ expires_at }}">{{ expires_label }}</span>
         </p>
       </div>
-      <a class="btn btn-primary" href="{{ url_for('share.download', token=link.token) }}">{{ icon('download', 16) }} Download</a>
+      {% if can_download %}
+      <a class="btn btn-primary" href="{{ url_for('share.download', token=link.token) }}">{{ icon('download', 16) }} Download {{ job.format | upper if job.format != 'summary' else 'CSV' }}</a>
+      {% endif %}
     </header>
 
     {% if link.redact %}
@@ -29,7 +31,7 @@
     {% endif %}
 
     <div class="highlight-grid highlight-grid--wide">
-      {% for label, value in job.preview.highlights %}
+      {% for label, value in table.highlights %}
       <div><span>{{ label }}</span><strong>{{ value }}</strong></div>
       {% endfor %}
     </div>
@@ -37,7 +39,7 @@
     <div class="table-wrap share-page__table">
       <table>
         <thead>
-          <tr>{% for h in job.preview.headers %}<th class="{{ 'right' if loop.last }}">{{ h }}</th>{% endfor %}</tr>
+          <tr>{% for h in table.headers %}<th class="{{ 'right' if loop.last }}">{{ h }}</th>{% endfor %}</tr>
         </thead>
         <tbody>
           {% for row in rows %}
@@ -46,8 +48,8 @@
         </tbody>
       </table>
     </div>
-    {% if job.preview.row_count > rows | length %}
-    <p class="xc-muted">Showing the first {{ rows | length }} of {{ job.preview.row_count }} rows. Download for everything.</p>
+    {% if table.rows | length > rows | length %}
+    <p class="xc-muted">Showing the first {{ rows | length }} of {{ '{:,}'.format(table.rows | length) }} rows.{% if can_download %} The download has every row.{% endif %}</p>
     {% endif %}
 
     <footer class="share-page__footer">

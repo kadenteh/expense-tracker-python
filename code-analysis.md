@@ -460,3 +460,28 @@ The three versions are layers of one feature, not competing designs. v2 has the 
 3. Rebase v3's `cloud/` onto the v2 engine and fix D1–D5.
 4. Ship sharing and history first.
 5. Add scheduling and live sync after that.
+
+---
+
+## 7. Outcome — combined implementation
+
+The recommendation in section 6 was carried out on `feature-data-export-combined`:
+
+| Step | What changed |
+|---|---|
+| Engine | v2's `exports/` package is the only export core. One CSV writer (`exports/csvutil.py`) adds the BOM and neutralises formulas while leaving signed numbers such as `-12.50` and `+8%` alone. It's used by every CSV, including the Expenses page export. PDF streams are Flate-compressed: a 20k-row PDF drops from 7.0 MB to 0.84 MB. |
+| v1 | The one-click **Download CSV** is a plain link to `/export/download?format=csv`, so it inherits the engine's safety. |
+| v3 on the engine | Templates are now presets: period → date range + format + summary table. The engine renders the file, so templates gain PDF and formula-safe CSV. The new **Summary CSV** format renders a template's table. Google Sheets only accepts table formats. |
+
+| Defect | Fix |
+|---|---|
+| D1 CSRF | `/exports/api/*` writes require an `X-Requested-With: ExportCenter` header, and cross-origin `Origin` headers are refused |
+| D2 formula injection in report CSVs | Fixed by construction: all CSVs go through `csvutil` |
+| D3 redacted downloads truncated | Jobs keep a snapshot of the exported rows. Redacted downloads are re-rendered from it in the original format: complete, raw values, descriptions hidden |
+| D4 inflated view counts | Link-preview bots are ignored, and views are counted once per browser (cookie) |
+| D5 cross-process orphan cleanup | Workers write a heartbeat. Only jobs silent for 2+ minutes are failed, and workers stop instead of overwriting a job someone else has failed |
+| D6 duplicate schedule runs | Due schedules are claimed with a compare-and-set `UPDATE`, so only one caller wins |
+| Unbounded storage | Retention: finished jobs keep their file for 30 days / the latest 50 (configurable). Exports behind a live share link are kept. History rows remain |
+| O(n) change detection per poll | SQLite triggers maintain an `expenses_version` counter, so change detection is a single-row read. `/exports/panels` at 20k rows: 166 ms → 55 ms |
+
+**Not changed:** PDFs are still Latin-only (no embedded TrueType font). The base app's own HTML forms still have no CSRF tokens. Jobs still run on in-process threads with a request-driven scheduler, which is fine for a single-process local app. A multi-worker deployment would want a real job queue and scheduler.

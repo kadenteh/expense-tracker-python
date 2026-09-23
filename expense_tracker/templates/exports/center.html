@@ -12,6 +12,7 @@
   <div class="xc-hero__actions">
     <div id="panel-status" aria-live="polite">{% include "exports/_status.html" %}</div>
     <div class="xc-hero__buttons">
+      <a class="btn btn-secondary" href="{{ url_for('export.download', format='csv') }}" download title="Every expense as CSV, right now">{{ icon('download', 16) }} Download CSV</a>
       <button type="button" class="btn btn-secondary" data-action="new-export" data-repeat="weekly">{{ icon('repeat', 16) }} Schedule</button>
       <button type="button" class="btn btn-primary" data-action="new-export">{{ icon('plus', 16) }} New export</button>
     </div>
