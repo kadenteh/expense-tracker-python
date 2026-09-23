@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Expense Tracker{% endblock %}
+
+{% block content %}
+{% if not expenses %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">$</div>
+    <div>
+      <h1>No expenses yet</h1>
+      <p>Add your first expense to start tracking your spending.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+  </div>
+{% else %}
+  <div class="page-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p>An overview of your spending, updated in real time.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <p class="summary-card__label">Total Spent</p>
+      <p class="summary-card__value">{{ total | currency }}</p>
+    </div>
+    <div class="summary-card">
+      <p class="summary-card__label">This Month</p>
+      <p class="summary-card__value">{{ month_total | currency }}</p>
+    </div>
+    <div class="summary-card">
+      <p class="summary-card__label">Transactions</p>
+      <p class="summary-card__value">{{ expenses | length }}</p>
+    </div>
+    <div class="summary-card">
+      <p class="summary-card__label">Top Category</p>
+      {% if top_category %}
+        <p class="summary-card__value" style="display:flex;align-items:center;gap:0.5rem;">
+          <span class="dot" style="background:{{ category_color(top_category.category) }}"></span>
+          {{ top_category.category }}
+        </p>
+      {% else %}
+        <p class="summary-card__value summary-card__value--muted">—</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <section class="card">
+      <h2>Spending by Category</h2>
+      {% if breakdown %}
+        <div class="donut-wrap">
+          <div class="donut-figure">
+            <svg width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="Spending by category">
+              <circle cx="100" cy="100" r="86" fill="none" stroke="var(--gridline)" stroke-width="28"></circle>
+              <g transform="rotate(-90 100 100)">
+                {% for c in breakdown %}
+                <circle
+                  class="donut-segment"
+                  data-category="{{ c.category }}"
+                  data-amount="{{ c.total | currency }}"
+                  data-percent="{{ c.percent | round(0) | int }}"
+                  cx="100" cy="100" r="86" fill="none"
+                  stroke="{{ category_color(c.category) }}"
+                  stroke-width="28"
+                  stroke-dasharray="{{ c.dash_array }}"
+                  stroke-dashoffset="{{ c.dash_offset }}"
+                  tabindex="0" role="button"
+                  aria-label="{{ c.category }}: {{ c.total | currency }}, {{ c.percent | round(0) | int }}%"
+                ></circle>
+                {% endfor %}
+              </g>
+            </svg>
+            <div class="donut-center">
+              <p class="donut-center__label" id="donut-center-label">Total</p>
+              <p class="donut-center__value" id="donut-center-value">{{ total | currency }}</p>
+              <p class="donut-center__percent" id="donut-center-percent"></p>
+            </div>
+          </div>
+
+          <ul class="legend">
+            {% for c in breakdown %}
+            <li class="legend-row" data-category="{{ c.category }}">
+              <span class="legend-row__left">
+                <span class="dot" style="background:{{ category_color(c.category) }}"></span>
+                <span>{{ c.category }}</span>
+              </span>
+              <span class="legend-row__amount">
+                {{ c.total | currency }}
+                <span class="legend-row__percent">{{ c.percent | round(0) | int }}%</span>
+              </span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <div class="chart-empty">
+          <div class="chart-empty__ring"></div>
+          <p>No spending recorded yet</p>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Last 6 Months</h2>
+      {% if max_trend_total > 0 %}
+        <div class="bars">
+          {% for m in trend %}
+          <div class="bar-col" tabindex="0" role="button" aria-label="{{ m.label }}: {{ m.total | currency }}">
+            <span class="bar-tooltip">{{ m.total | currency }}</span>
+            <div class="bar" style="height: {{ m.bar_height }}px;"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="bar-labels">
+          {% for m in trend %}
+          <span>{{ m.label }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="chart-empty" style="height:160px;">
+          <p>No spending recorded yet</p>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <h2 style="margin:0;">Recent Expenses</h2>
+      <a href="{{ url_for('expenses.list_view') }}" style="font-size:0.875rem;font-weight:500;color:var(--brand);text-decoration:none;">View all</a>
+    </div>
+    <ul class="recent-list">
+      {% for e in recent %}
+      <li>
+        <div class="recent-list__left">
+          <span class="dot" style="background:{{ category_color(e.category) }}"></span>
+          <div>
+            <p class="recent-list__desc">{{ e.description }}</p>
+            <p class="recent-list__meta">{{ e.category }} · {{ e.date | nicedate }}</p>
+          </div>
+        </div>
+        <span class="recent-list__amount">{{ e.amount | currency }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+{% endblock %}

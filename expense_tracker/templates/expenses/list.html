@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Expenses · Expense Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Expenses</h1>
+    <p>
+      {{ expenses | length }} {{ "transaction" if expenses | length == 1 else "transactions" }}
+      · {{ filtered_total | currency }}
+    </p>
+  </div>
+</div>
+
+<form class="filter-bar" method="get" action="{{ url_for('expenses.list_view') }}" id="filter-form">
+  <div class="filter-row">
+    <div class="search-wrap">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"></circle>
+        <path d="m11 11 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+      </svg>
+      <input
+        type="text" name="q" value="{{ filters.search }}"
+        placeholder="Search descriptions…" class="search-field" aria-label="Search expenses"
+      >
+    </div>
+
+    <select name="category" class="field" aria-label="Filter by category" data-auto-submit>
+      <option value="All" {{ "selected" if filters.category == "All" }}>All categories</option>
+      {% for c in ALL_CATEGORIES %}
+        <option value="{{ c }}" {{ "selected" if filters.category == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="sort" class="field" aria-label="Sort expenses" data-auto-submit>
+      <option value="date-desc" {{ "selected" if filters.sort == "date-desc" }}>Newest first</option>
+      <option value="date-asc" {{ "selected" if filters.sort == "date-asc" }}>Oldest first</option>
+      <option value="amount-desc" {{ "selected" if filters.sort == "amount-desc" }}>Amount: high to low</option>
+      <option value="amount-asc" {{ "selected" if filters.sort == "amount-asc" }}>Amount: low to high</option>
+    </select>
+
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-secondary">Search</button>
+      <a
+        class="btn btn-secondary {{ 'disabled' if not expenses }}"
+        href="{{ url_for('expenses.export_csv', q=filters.search, category=filters.category, **{'from': filters.date_from, 'to': filters.date_to, 'sort': filters.sort}) }}"
+        {{ 'aria-disabled=true tabindex=-1 style=pointer-events:none;opacity:0.5;' if not expenses else '' }}
+      >Export CSV</a>
+      <a class="btn btn-primary" href="{{ url_for('expenses.add') }}">+ Add Expense</a>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <label class="date-field">From
+      <input type="date" name="from" value="{{ filters.date_from }}" class="field" data-auto-submit>
+    </label>
+    <label class="date-field">To
+      <input type="date" name="to" value="{{ filters.date_to }}" class="field" data-auto-submit>
+    </label>
+    {% if filters.search or filters.category != "All" or filters.date_from or filters.date_to %}
+      <a class="clear-filters" href="{{ url_for('expenses.list_view') }}">Clear filters</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if not expenses %}
+  <div class="no-results">
+    <p>No expenses found</p>
+    <p>Try adjusting your filters, or add a new expense to get started.</p>
+  </div>
+{% else %}
+  <ul class="card-list">
+    {% for e in expenses %}
+    <li class="expense-card">
+      <div class="expense-card__top">
+        <div style="min-width:0;">
+          <p class="expense-card__desc">{{ e.description }}</p>
+          <p class="expense-card__date">{{ e.date | nicedate }}</p>
+        </div>
+        <span class="expense-card__amount">{{ e.amount | currency }}</span>
+      </div>
+      <div class="expense-card__bottom">
+        <span class="badge">
+          <span class="dot" style="background:{{ category_color(e.category) }}"></span>
+          {{ e.category }}
+        </span>
+        {% include "partials/row_actions.html" %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Category</th>
+          <th class="right">Amount</th>
+          <th class="right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td>{{ e.date | nicedate }}</td>
+          <td class="desc-cell" title="{{ e.description }}">{{ e.description }}</td>
+          <td>
+            <span class="badge">
+              <span class="dot" style="background:{{ category_color(e.category) }}"></span>
+              {{ e.category }}
+            </span>
+          </td>
+          <td class="right amount-cell">{{ e.amount | currency }}</td>
+          <td class="right">
+            {% include "partials/row_actions.html" %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

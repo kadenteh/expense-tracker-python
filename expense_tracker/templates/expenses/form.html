@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit Expense" if mode == "edit" else "Add Expense" }} · Expense Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ "Edit Expense" if mode == "edit" else "Add Expense" }}</h1>
+  </div>
+</div>
+
+<div class="card form-card">
+  <form
+    method="post"
+    action="{{ url_for('expenses.edit', expense_id=expense_id) if mode == 'edit' else url_for('expenses.add') }}"
+    novalidate
+  >
+    <div class="form-field">
+      <label for="description">Description</label>
+      <input
+        id="description" name="description" type="text"
+        value="{{ values.description }}"
+        placeholder="e.g. Groceries at Trader Joe's"
+        class="form-input {{ 'has-error' if errors.description }}"
+      >
+      {% if errors.description %}<p class="form-error">{{ errors.description }}</p>{% endif %}
+    </div>
+
+    <div class="form-row">
+      <div class="form-field">
+        <label for="amount">Amount</label>
+        <div class="amount-input-wrap">
+          <span>$</span>
+          <input
+            id="amount" name="amount" type="number" step="0.01" min="0" inputmode="decimal"
+            value="{{ values.amount }}" placeholder="0.00"
+            class="form-input {{ 'has-error' if errors.amount }}"
+          >
+        </div>
+        {% if errors.amount %}<p class="form-error">{{ errors.amount }}</p>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="date">Date</label>
+        <input
+          id="date" name="date" type="date" value="{{ values.date }}"
+          class="form-input {{ 'has-error' if errors.date }}"
+        >
+        {% if errors.date %}<p class="form-error">{{ errors.date }}</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="form-field">
+      <label for="category">Category</label>
+      <select id="category" name="category" class="form-select {{ 'has-error' if errors.category }}">
+        {% for c in ALL_CATEGORIES %}
+          <option value="{{ c }}" {{ "selected" if values.category == c }}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.category %}<p class="form-error">{{ errors.category }}</p>{% endif %}
+    </div>
+
+    <div class="form-actions">
+      <a class="btn btn-secondary" href="{{ url_for('expenses.list_view') }}">Cancel</a>
+      <button type="submit" class="btn btn-primary">
+        {{ "Save Changes" if mode == "edit" else "Add Expense" }}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
